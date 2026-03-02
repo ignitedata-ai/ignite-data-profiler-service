@@ -1,0 +1,58 @@
+services:
+  # ===========================================================================
+  # Application Service - FastAPI Backend
+  # ===========================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: ignite-data-profiler-service
+    restart: unless-stopped
+    ports:
+      - "8004:8004"  # Application port
+      - "9004:9004"  # Metrics port
+    environment:
+      # Application settings
+      ENVIRONMENT: "development"
+      DEBUG: "false"
+      PORT: 8004
+
+      # Database configuration - use Docker service names
+      DATABASE_URL: "sqlite+aiosqlite:///./profiler.db"
+
+      # Redis configuration
+      REDIS_URL: "redis://redis:6379/4"
+
+      # Logging configuration
+      LOG_LEVEL: "WARNING"
+      LOG_FORMAT: "json"
+
+      # OpenTelemetry & Observability
+      OTEL_SERVICE_NAME: "ignite-data-profiler-service"
+
+      # Jaeger tracing configuration
+      JAEGER_AGENT_URL: "http://jaeger:4318"
+
+      JWT_PUBLIC_KEY_PATH: ""
+      JWT_PUBLIC_KEY: "test_public_key"
+      OPENAI_API_KEY: ""
+
+    networks:
+      - ilens-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      # Mount logs directory if needed
+      - ./logs:/app/logs
+
+# =============================================================================
+# Networks Configuration
+# =============================================================================
+networks:
+  ilens-network:
+    external: true  # Use existing external network shared across services

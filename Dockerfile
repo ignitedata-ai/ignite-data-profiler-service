@@ -1,0 +1,62 @@
+# ---------- build stage ----------
+FROM python:3.12-slim AS builder
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    libffi-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for faster package management
+RUN pip install uv
+
+WORKDIR /app
+
+# Install dependencies first (cached layer)
+COPY pyproject.toml uv.lock ./
+COPY libs/ libs/
+RUN uv sync --frozen --no-cache --no-dev --no-editable
+
+# ---------- production stage ----------
+FROM python:3.12-slim AS production
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PASSLIB_BCRYPT_IDENT="2b" \
+    DEBUG=False \
+    ENVIRONMENT=production
+
+RUN groupadd --gid 1000 appuser \
+    && useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser
+
+WORKDIR /app
+RUN chown -R appuser:appuser /app
+
+# Copy the virtual-env from the builder
+COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Copy application code
+COPY . .
+
+RUN mkdir -p /tmp/prometheus_multiproc_dir && \
+    chown -R appuser:appuser /tmp/prometheus_multiproc_dir
+
+USER appuser
+
+EXPOSE 8004 9004
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8004/health || exit 1
+
+CMD ["sh" ,"scripts/startup.sh"]

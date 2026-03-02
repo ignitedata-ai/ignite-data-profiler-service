@@ -1,0 +1,39 @@
+# Byte-compiled / optimized / compiled files
+__pycache__/
+*.pyc
+*.pyd
+*.so
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Editor/IDE specific files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Log files
+*.log
+
+# Database files
+*.sqlite3
+
+# Environment variables
+.env
+.venv/
+.pytest_cache/
+.ruff_cache/
+.vscode
+
+# Build artifacts
+dist/
+build/
+logs/
+htmlcov/
+.coverage
+*.db
+.mypy_cache
+.DS_Store

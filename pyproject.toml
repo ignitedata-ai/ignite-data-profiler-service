@@ -1,0 +1,257 @@
+[project]
+name = "ignite-data-profiler-service"
+version = "0.1.0"
+description = "A data profiling service for analyzing and summarizing dataset characteristics"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.16.4",
+    "asyncpg>=0.30.0",
+    "bcrypt>=4.3.0",
+    "cryptography>=45.0.6",
+    "fastapi>=0.116.1",
+    "passlib>=1.7.4",
+    "pydantic-settings>=2.10.1",
+    "pydantic>=2.11.7",
+    "sqlalchemy>=2.0.43",
+    "structlog>=25.4.0",
+    "uvicorn>=0.35.0",
+    "ruff>=0.12.9",
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.1.0",
+    "greenlet>=3.2.4",
+    "email-validator>=2.2.0",
+    "python-multipart>=0.0.20",
+    "opentelemetry-api>=1.36.0",
+    "opentelemetry-sdk>=1.36.0",
+    "opentelemetry-instrumentation-fastapi>=0.57b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.57b0",
+    "opentelemetry-exporter-prometheus>=0.57b0",
+    "prometheus-client>=0.22.1",
+    "pyjwt>=2.10.1",
+    "httpx>=0.28.1",
+    "python-dateutil>=2.9.0.post0",
+    "pytest-cov>=6.2.1",
+    "faker>=37.5.3",
+    "pre-commit>=4.3.0",
+    "opentelemetry-instrumentation>=0.57b0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.36.0",
+    "ujson>=5.10.0",
+    "aiosqlite>=0.21.0",
+    "opentelemetry-instrumentation-logging>=0.57b0",
+    "opentelemetry-exporter-otlp-proto-http>=1.39.1",
+    "slowapi>=0.1.9",
+    "redis>=7.2.0",
+    "openai>=1.50.0",
+    "duckdb>=1.4.4",
+    "ignite-data-connectors",
+]
+
+[dependency-groups]
+dev = [
+    "debugpy>=1.8.16",
+    "locust>=2.40.1",
+    "pre-commit>=4.3.0",
+    "ruff>=0.12.9",
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.1.0",
+    "pytest-cov>=6.2.1",
+    "pytest-mock>=3.15.1",
+    "httpx>=0.28.1",
+    "pyright>=1.1.390",
+    "bandit>=1.8.0",
+    "mypy>=1.19.1",
+]
+
+[tool.ruff]
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+]
+
+line-length = 130
+indent-width = 4
+target-version = "py312"
+
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "ASYNC"]
+
+ignore = [
+    "B008",
+    "C901", # too complex
+    "W191", # indentation contains tabs
+    "D401", # imperative mood
+    "D104",
+    "D100",
+    "D103",
+    "D101",
+    "D205",
+    "D105",
+    "D107",
+    "D102",
+    "N802",
+    "N805",
+    "F841",
+    "UP042",
+    "UP046",
+    "B017"
+]
+
+fixable = ["ALL"]
+unfixable = ["B"]
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = false
+docstring-code-line-length = "dynamic"
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+plugins = ["pydantic.mypy", "sqlalchemy.ext.mypy.plugin"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "integration: marks tests as integration tests (requires external services)",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=core",
+    "--cov=api",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-fail-under=60"
+]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["core", "api"]
+omit = [
+    "*/tests/*",
+    "*/migrations/*",
+    "*/__pycache__/*"
+]
+
+[tool.bandit]
+exclude_dirs = [
+    "tests/",
+    "./tests/",
+    ".venv/",
+    "venv/",
+    "db_migrations/",
+    "alembic/",
+    "scripts/",
+]
+skips = [
+    "B101",  # assert_used - commonly used in tests
+    "B104",  # hardcoded_bind_all_interfaces - normal for web servers
+    "B106",  # hardcoded_password_funcarg - OAuth2 token_type="bearer" is not a password
+    "B110",  # try_except_pass - sometimes necessary for error handling
+    "B403",  # pickle import - using for Redis caching (documented risk)
+    "B301",  # pickle loads - using for Redis caching (documented risk)
+    "B608",  # hardcoded_sql_expressions - using parameterized queries where needed
+]
+
+[tool.pyright]
+# --- Project layout ---
+include = ["core"]
+exclude = [
+  "**/__pycache__",
+  "**/.venv",
+  ".venv",
+  "build",
+  "dist",
+  ".mypy_cache",
+  ".pytest_cache"
+]
+venvPath = "."
+venv = ".venv"          # change if your venv is named differently
+
+# --- Type checking strictness ---
+typeCheckingMode = "standard"
+
+# --- Python version / platform ---
+pythonVersion = "3.12"
+pythonPlatform = "All"
+
+# --- Stub / dependency handling ---
+useLibraryCodeForTypes = true
+stubPath = "typings"
+
+reportMissingImports = "error"
+reportMissingModuleSource = "warning"
+
+reportUntypedClassDecorator = "warning"
+reportUntypedBaseClass = "error"
+reportUntypedNamedTuple = "error"
+
+reportPrivateUsage = "warning"
+reportIncompatibleMethodOverride = "error"
+reportIncompatibleVariableOverride = "error"
+
+reportReturnTypeMismatch = "error"
+reportInconsistentConstructor = "error"
+reportOverlappingOverload = "error"
+
+reportUnnecessaryCast = "warning"
+reportUnnecessaryTypeIgnoreComment = "warning"
+reportUnnecessaryComparison = "warning"
+reportUnnecessaryIsInstance = "warning"
+
+
+reportUnusedImport = "warning"
+reportUnusedClass = "warning"
+reportUnusedVariable = "warning"
+reportUnusedCoroutine = "error"
+
+reportConstantRedefinition = "error"
+reportDuplicateImport = "error"
+
+reportPossiblyUnboundVariable = "error"
+reportPossiblyUninitializedInstanceVariable = "error"
+
+reportDeprecated = "warning"
+
+# --- Numerical strictness (optional, but good in prod codebases) ---
+reportImplicitBool = "warning"
+reportImplicitIntegerToFloat = "warning"
+
+[tool.uv.sources]
+ignite-data-connectors = { path = "libs/ignite_data_connectors-0.3.0-py3-none-any.whl" }

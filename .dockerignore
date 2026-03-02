@@ -1,0 +1,44 @@
+# Virtual environments
+.venv/
+venv/
+libs/ignite-data-connectors/.venv/
+
+# Git
+.git/
+.gitignore
+
+# IDE / editor
+.vscode/
+.idea/
+*.sublime-*
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Test & coverage
+tests/
+htmlcov/
+.coverage
+
+# Build artifacts
+dist/
+build/
+
+# Docs & misc
+docs/
+*.md
+*.log
+*.db
+*.sqlite3
+.DS_Store
+.env
+.env.*
+
+# Docker (avoid recursive context)
+Dockerfile
+docker-compose*.yml

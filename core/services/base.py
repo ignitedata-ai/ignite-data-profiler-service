@@ -1,0 +1,422 @@
+"""BaseProfiler — abstract orchestrator for all datasource profilers.
+
+Subclass this for every new datasource.  Only four abstract methods need
+implementing; all cross-cutting concerns (tracing, connection lifecycle,
+timeout, error mapping, structured logging) live here and are never
+repeated.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from abc import ABC, abstractmethod
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from core.services.task_manager import ProgressReporter
+
+from ignite_data_connectors import (
+    BaseConnector,
+    ConnectorConnectionError,
+    QueryError,
+    create_connector,
+)
+from ignite_data_connectors import (
+    ConfigurationError as ConnectorConfigError,
+)
+
+from core.api.v1.schemas.profiler import ProfilingConfig, ProfilingResponse
+from core.exceptions import ConfigurationError, DatabaseError, ExternalServiceError
+from core.exceptions.base import ProfilingTimeoutError
+from core.logging import get_logger
+from core.observability import get_tracer
+
+logger = get_logger(__name__)
+tracer = get_tracer()
+
+
+class BaseProfilerService(ABC):
+    """Abstract base for all datasource profilers.
+
+    Subclasses must declare :attr:`service_name` and :attr:`span_name` as
+    class-level strings and implement the four abstract methods below.
+
+    Usage::
+
+        class PostgresProfiler(BaseProfiler):
+            service_name = "PostgreSQL"
+            span_name = "profiler.postgres"
+            ...
+
+        PROFILER_REGISTRY = {"postgres": PostgresProfiler()}
+    """
+
+    #: Human-readable service label used in error messages and OTel attributes.
+    service_name: str
+    #: OpenTelemetry span name for the top-level profiling span.
+    span_name: str
+
+    # ── Abstract interface ─────────────────────────────────────────────────────
+
+    @abstractmethod
+    def _span_attributes(self, conn: Any) -> dict[str, str | int]:
+        """Return OTel span attributes for this datasource connection."""
+
+    @abstractmethod
+    def _log_context(self, conn: Any) -> dict[str, Any]:
+        """Return structured log fields for this connection.
+
+        Must include at minimum ``host`` and ``database`` keys so that the
+        base orchestrator can produce consistent log output.
+        """
+
+    @abstractmethod
+    async def _run(
+        self,
+        connector: BaseConnector,
+        config: ProfilingConfig,
+        progress: ProgressReporter | None = None,
+    ) -> dict[str, Any]:
+        """Execute the datasource-specific profiling logic.
+
+        Args:
+            connector: An active, already-tested ``BaseConnector``.
+            config: Validated ``ProfilingConfig`` from the request.
+            progress: Optional progress reporter for background task tracking.
+
+        Returns:
+            Raw profiling result dict to be passed to :meth:`_assemble_response`.
+
+        """
+
+    @abstractmethod
+    def _assemble_response(
+        self,
+        raw: dict[str, Any],
+        profiled_at: datetime,
+    ) -> ProfilingResponse:
+        """Convert the raw profiling dict into a ``ProfilingResponse``."""
+
+    # ── Orchestration ──────────────────────────────────────────────────────────
+
+    async def profile(
+        self,
+        body: Any,
+        progress: ProgressReporter | None = None,
+    ) -> ProfilingResponse:
+        """Run the full profiling flow for a single request.
+
+        Handles tracing, connection lifecycle, timeout enforcement, error
+        mapping, and structured logging.  Subclasses should not override this.
+
+        Args:
+            body: The validated profiling request body.
+            progress: Optional progress reporter for background task tracking.
+        """
+        conn = body.connection
+        cfg = body.config
+        ctx = self._log_context(conn)
+        profiled_at = datetime.now(UTC)
+
+        with tracer.start_as_current_span(self.span_name) as span:
+            for key, value in self._span_attributes(conn).items():
+                span.set_attribute(key, value)
+
+            try:
+                if progress:
+                    progress.update(phase="connecting", percent=5)
+                    await progress.flush()
+
+                async with create_connector(conn) as db:
+                    await db.test_connection()
+                    logger.info("Connection test passed", **ctx)
+
+                    if progress:
+                        progress.update(phase="profiling", percent=10)
+                        await progress.flush()
+
+                    raw = await asyncio.wait_for(
+                        self._run(db, cfg, progress=progress),
+                        timeout=cfg.timeout_seconds,
+                    )
+
+            except TimeoutError:
+                logger.warning(
+                    "Profiling timed out",
+                    **ctx,
+                    timeout_seconds=cfg.timeout_seconds,
+                )
+                raise ProfilingTimeoutError(
+                    message=f"Profiling exceeded the configured timeout of {cfg.timeout_seconds}s",
+                    timeout_seconds=cfg.timeout_seconds,
+                ) from None
+
+            except (ConnectorConfigError, ConnectorConnectionError, QueryError) as exc:
+                logger.error(
+                    "Connector error during profiling",
+                    **ctx,
+                    error=str(exc),
+                    exc_info=True,
+                )
+                raise self._map_error(exc, ctx) from exc
+
+        logger.info(
+            "Profiling complete",
+            **ctx,
+            schema_count=len(raw.get("schemas", [])),
+        )
+        response = self._assemble_response(raw, profiled_at)
+
+        if cfg.augment_descriptions:
+            if progress:
+                progress.update(phase="augmenting", percent=70, detail={"augmentation_step": "table_descriptions"})
+                await progress.flush()
+            response = await self._augment_response(response, cfg)
+
+        if cfg.augment_column_descriptions:
+            if progress:
+                progress.update(phase="augmenting", percent=80, detail={"augmentation_step": "column_descriptions"})
+                await progress.flush()
+            response = await self._augment_column_response(response, cfg)
+
+        if cfg.augment_glossary:
+            if progress:
+                progress.update(phase="augmenting", percent=85, detail={"augmentation_step": "glossary"})
+                await progress.flush()
+            response = await self._augment_glossary_response(response, cfg)
+
+        if cfg.infer_kpis:
+            if progress:
+                progress.update(phase="augmenting", percent=90, detail={"augmentation_step": "kpis"})
+                await progress.flush()
+            response = await self._augment_kpis_response(response, cfg)
+
+        if progress:
+            progress.update(phase="completed", percent=100)
+            await progress.flush()
+
+        return response
+
+    async def _augment_response(
+        self,
+        response: ProfilingResponse,
+        cfg: ProfilingConfig,
+    ) -> ProfilingResponse:
+        """Augment table descriptions with LLM-generated text.
+
+        Always a best-effort step: if the LLM client is not configured or
+        all calls fail, the original ``response`` is returned unmodified.
+        Partial success is valid — only successfully described tables are updated.
+        """
+        from core.llm import get_llm_client
+
+        llm = get_llm_client()
+        if llm is None:
+            logger.info("augment_descriptions=True but no LLM client is configured; skipping")
+            return response
+
+        all_tables = [table for schema in response.schemas for table in schema.tables]
+
+        if not all_tables:
+            return response
+
+        logger.info(
+            "Starting LLM description augmentation",
+            table_count=len(all_tables),
+            batch_size=cfg.llm_batch_size,
+            provider=llm.provider_name,
+        )
+
+        t_llm = time.monotonic()
+        try:
+            await llm.augment_tables(all_tables, batch_size=cfg.llm_batch_size)
+        except Exception as exc:
+            logger.error(
+                "LLM augmentation encountered an unexpected error",
+                error=str(exc),
+                exc_info=True,
+            )
+        else:
+            logger.info(
+                "LLM augmentation complete",
+                table_count=len(all_tables),
+                llm_duration_seconds=round(time.monotonic() - t_llm, 3),
+            )
+
+        return response
+
+    async def _augment_column_response(
+        self,
+        response: ProfilingResponse,
+        cfg: ProfilingConfig,
+    ) -> ProfilingResponse:
+        """Augment column descriptions with LLM-generated text.
+
+        Always a best-effort step: if the LLM client is not configured or
+        all calls fail, the original ``response`` is returned unmodified.
+        Partial success is valid — only successfully described columns are updated.
+        """
+        from core.llm import get_llm_client
+
+        llm = get_llm_client()
+        if llm is None:
+            logger.info("augment_column_descriptions=True but no LLM client is configured; skipping")
+            return response
+
+        pairs = [(column, table) for schema in response.schemas for table in schema.tables for column in table.columns]
+
+        if not pairs:
+            return response
+
+        logger.info(
+            "Starting LLM column description augmentation",
+            column_count=len(pairs),
+            batch_size=cfg.llm_column_batch_size,
+            provider=llm.provider_name,
+        )
+
+        t_llm = time.monotonic()
+        try:
+            await llm.augment_columns(pairs, batch_size=cfg.llm_column_batch_size)
+        except Exception as exc:
+            logger.error(
+                "LLM column augmentation encountered an unexpected error",
+                error=str(exc),
+                exc_info=True,
+            )
+        else:
+            logger.info(
+                "LLM column augmentation complete",
+                column_count=len(pairs),
+                llm_duration_seconds=round(time.monotonic() - t_llm, 3),
+            )
+
+        return response
+
+    async def _augment_glossary_response(
+        self,
+        response: ProfilingResponse,
+        cfg: ProfilingConfig,
+    ) -> ProfilingResponse:
+        """Infer business glossary terms for each table via LLM.
+
+        Always a best-effort step: if the LLM client is not configured or
+        all calls fail, the original ``response`` is returned unmodified.
+        Partial success is valid — only successfully processed tables are updated.
+        """
+        from core.llm import get_llm_client
+
+        llm = get_llm_client()
+        if llm is None:
+            logger.info("augment_glossary=True but no LLM client is configured; skipping")
+            return response
+
+        all_tables = [table for schema in response.schemas for table in schema.tables]
+
+        if not all_tables:
+            return response
+
+        logger.info(
+            "Starting LLM glossary inference",
+            table_count=len(all_tables),
+            batch_size=cfg.llm_glossary_batch_size,
+            provider=llm.provider_name,
+        )
+
+        t_llm = time.monotonic()
+        try:
+            await llm.augment_glossary_terms(all_tables, batch_size=cfg.llm_glossary_batch_size)
+        except Exception as exc:
+            logger.error(
+                "LLM glossary inference encountered an unexpected error",
+                error=str(exc),
+                exc_info=True,
+            )
+        else:
+            logger.info(
+                "LLM glossary inference complete",
+                table_count=len(all_tables),
+                llm_duration_seconds=round(time.monotonic() - t_llm, 3),
+            )
+
+        return response
+
+    async def _augment_kpis_response(
+        self,
+        response: ProfilingResponse,
+        cfg: ProfilingConfig,
+    ) -> ProfilingResponse:
+        """Infer business KPIs via the three-phase Map-Reduce LLM pipeline.
+
+        Always a best-effort step: if the LLM client is not configured or
+        all phases fail, the original ``response`` is returned with
+        ``kpis=None`` (not requested) preserved as-is.
+        """
+        from core.llm import get_llm_client
+
+        llm = get_llm_client()
+        if llm is None:
+            logger.info("infer_kpis=True but no LLM client is configured; skipping")
+            return response
+
+        all_tables = [table for schema in response.schemas for table in schema.tables]
+
+        if not all_tables:
+            response.kpis = []
+            return response
+
+        logger.info(
+            "Starting LLM KPI inference",
+            table_count=len(all_tables),
+            max_domains=cfg.llm_kpi_max_domains,
+            kpis_per_domain=cfg.llm_kpis_per_domain,
+            provider=llm.provider_name,
+        )
+
+        t_llm = time.monotonic()
+        try:
+            kpis = await llm.augment_kpis(
+                all_tables,
+                max_domains=cfg.llm_kpi_max_domains,
+                kpis_per_domain=cfg.llm_kpis_per_domain,
+            )
+            response.kpis = kpis
+        except Exception as exc:
+            logger.error(
+                "LLM KPI inference encountered an unexpected error",
+                error=str(exc),
+                exc_info=True,
+            )
+        else:
+            logger.info(
+                "LLM KPI inference complete",
+                kpi_count=len(kpis),
+                llm_duration_seconds=round(time.monotonic() - t_llm, 3),
+            )
+
+        return response
+
+    # ── Error mapping ──────────────────────────────────────────────────────────
+
+    def _map_error(self, exc: Exception, ctx: dict[str, Any]) -> Exception:
+        """Convert a connector exception into the service exception hierarchy."""
+        host = ctx.get("host", "unknown")
+        database = ctx.get("database", "unknown")
+
+        if isinstance(exc, ConnectorConfigError):
+            return ConfigurationError(
+                message=f"Invalid database connection configuration: {exc}",
+            )
+        if isinstance(exc, ConnectorConnectionError):
+            return ExternalServiceError(
+                message=f"Cannot connect to {self.service_name} at {host}/{database}: {exc}",
+                service_name=self.service_name,
+            )
+        if isinstance(exc, QueryError):
+            return DatabaseError(
+                message=f"SQL execution error during profiling: {exc}",
+                operation="profiling_query",
+            )
+        return exc
