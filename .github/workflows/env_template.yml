@@ -1,0 +1,117 @@
+name: Reusable Environment Template
+
+on:
+  workflow_call:
+    inputs:
+      AWS_IAM_ROLE:
+        required: true
+        type: string
+      AWS_REGION:
+        required: true
+        type: string
+      PROJECT:
+        required: true
+        type: string
+      ENVIRONMENT:
+        required: true
+        type: string
+      ECR_REPOSITORY:
+        required: true
+        type: string
+
+jobs:
+  Environment:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout source
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials via OIDC
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.AWS_IAM_ROLE }}
+        aws-region: ${{ inputs.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Get the current image digest
+      id: get-current
+      run: |
+        DIGEST=$(aws ecr describe-images --repository-name ${{ inputs.PROJECT }}-${{ inputs.ECR_REPOSITORY }} --image-ids imageTag=${{ inputs.ENVIRONMENT }} --query 'imageDetails[].imageDigest' --output text --region ${{ inputs.AWS_REGION }})
+
+        echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+
+    - name: Deploying the ECR image
+      run: |
+        IMAGE_TAG=$(git rev-parse --short ${{ github.sha }})
+
+        echo "The build version is ${IMAGE_TAG}"
+        echo "Getting the Image Manifest for the image tagged with ${IMAGE_TAG}"
+        MANIFEST=$(aws ecr batch-get-image --repository-name ${{ inputs.PROJECT }}-${{ inputs.ECR_REPOSITORY }} --image-ids imageTag=$IMAGE_TAG --query 'images[].imageManifest' --output text --region ${{ inputs.AWS_REGION }} )
+        echo $MANIFEST
+
+        echo "Add ${{ inputs.ENVIRONMENT }} tag on the image with above image manifest"
+        aws ecr put-image --repository-name ${{ inputs.PROJECT }}-${{ inputs.ECR_REPOSITORY }} --image-tag ${{ inputs.ENVIRONMENT }} --image-manifest "$MANIFEST"  --region ${{ inputs.AWS_REGION }}
+
+        echo "Describe the image to check the tag"
+        aws ecr describe-images --repository-name ${{ inputs.PROJECT }}-${{ inputs.ECR_REPOSITORY }} --image-ids imageTag=${{ inputs.ENVIRONMENT }}  --region ${{ inputs.AWS_REGION }}
+
+        echo "Force deploy the service"
+        aws ecs update-service --force-new-deployment --cluster aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-cluster --service aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-lens-service > /dev/null
+
+        echo ""
+        echo "Triggered the deployment"
+
+        echo ""
+        echo "Wait for the service to be stable ..."
+        aws ecs wait services-stable --cluster aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-cluster --services aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-lens-service
+
+        STATUS=$?
+
+        if [ $STATUS -eq 0 ]
+        then
+          echo "Deployment Successfull"
+        else
+          echo "Deployment Failed"
+          exit 255
+        fi
+
+    - name: Rolling back the ECR image
+      if: failure()
+      run: |
+        echo "Rolling back to the previous build version"
+        echo ""
+
+        echo "Getting the Image Manifest of previous build version"
+        MANIFEST=$(aws ecr batch-get-image --repository-name ${{ inputs.PROJECT }}-${{ inputs.ECR_REPOSITORY }} --image-ids imageDigest=${{ steps.get-current.outputs.digest }} --query 'images[].imageManifest' --output text --region ${{ inputs.AWS_REGION }} )
+
+        echo "$MANIFEST"
+
+        echo "Add ${{ inputs.ENVIRONMENT }} tag on the image with above image manifest"
+        aws ecr put-image --repository-name ${{ inputs.PROJECT }}-${{ inputs.ECR_REPOSITORY }} --image-tag ${{ inputs.ENVIRONMENT }} --image-manifest "$MANIFEST" --region ${{ inputs.AWS_REGION }}
+
+        echo "Describe the image to check the tag"
+        aws ecr describe-images --repository-name ${{ inputs.PROJECT }}-${{ inputs.ECR_REPOSITORY }} --image-ids imageTag=${{ inputs.ENVIRONMENT }}  --region ${{ inputs.AWS_REGION }}
+
+        echo "Force deploy the service"
+        aws ecs update-service --force-new-deployment --cluster aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-cluster --service aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-lens-service > /dev/null
+
+        echo ""
+        echo "Triggered the deployment"
+
+        echo ""
+        echo "Wait for the service to be stable ..."
+        aws ecs wait services-stable --cluster aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-cluster --services aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-lens-service
+
+        STATUS=$?
+
+        if [ $STATUS -eq 0 ]
+        then
+          echo "Deployment Successfull"
+        else
+          echo "Deployment Failed"
+          exit 255
+        fi

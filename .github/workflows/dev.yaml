@@ -1,0 +1,59 @@
+name: CI/CD pipeline for Ignite Lens Profile Service
+
+on:
+  push:
+    branches:
+      - 'development'
+
+permissions:
+  id-token: write   # Required for OIDC
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: us-east-1
+      PROJECT: ilens
+      ECR_REPOSITORY: profile
+
+    steps:
+    - name: Checkout source
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials via OIDC
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::716695577700:role/aws-ilens-globals-github-actions-role
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Building Docker image
+      run: |
+        IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT }}-${{ env.ECR_REPOSITORY }}"
+        IMAGE_TAG=$(git rev-parse --short ${{ github.sha }})
+        echo "The image tag to be used is ${IMAGE_TAG}"
+        docker buildx build --platform linux/arm64 --load -t ${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} .
+        docker tag ${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} $IMAGE_URI:${IMAGE_TAG}
+        docker push --all-tags $IMAGE_URI
+
+  Dev:
+    uses: ./.github/workflows/env_template.yml
+    needs: Build
+    if: success()
+    with:
+      AWS_IAM_ROLE: arn:aws:iam::716695577700:role/aws-ilens-globals-github-actions-role
+      AWS_REGION: us-east-1
+      ENVIRONMENT: dev
+      PROJECT: ilens
+      ECR_REPOSITORY: profile
