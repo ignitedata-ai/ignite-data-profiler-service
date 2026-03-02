@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     ENVIRONMENT: Environment = Environment.DEVELOPMENT
     DEBUG: bool = Field(default=False)
 
+    # JWT Authentication
+    JWT_AUTH_ENABLED: bool = Field(default=True)
+
     # Server
     HOST: str = Field(default="0.0.0.0")
     PORT: int = Field(default=8004)

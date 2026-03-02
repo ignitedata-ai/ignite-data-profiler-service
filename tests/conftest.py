@@ -45,6 +45,7 @@ def app():
         LOG_LEVEL=LogLevel.DEBUG,
         LOG_FORMAT="text",
         ENABLE_METRICS=False,
+        JWT_AUTH_ENABLED=False,
     )
 
     # Temporarily override global settings

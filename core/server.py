@@ -22,7 +22,7 @@ from core.exceptions import (
     validation_exception_handler,
 )
 from core.logging import configure_logging, get_logger
-from core.middlewares import LoggingMiddleware, SecurityHeadersMiddleware, configure_cors
+from core.middlewares import JWTAuthMiddleware, LoggingMiddleware, SecurityHeadersMiddleware, configure_cors
 from core.observability import init_observability, instrument_app, shutdown_observability
 
 # Configure logging before anything else
@@ -51,6 +51,9 @@ def custom_openapi(app: FastAPI):
             "description": "Enter JWT token obtained from login endpoint",
         }
     }
+
+    # Apply security globally so the Authorize button appears in Swagger UI
+    openapi_schema["security"] = [{"HTTPBearer": []}]
 
     app.openapi_schema = openapi_schema
     return app.openapi_schema
@@ -146,6 +149,9 @@ def create_app() -> FastAPI:
     # Add security headers middleware
     app.add_middleware(SecurityHeadersMiddleware)
 
+    # Add JWT authentication middleware
+    app.add_middleware(JWTAuthMiddleware)
+
     # Add logging middleware (last for complete request/response logging)
     app.add_middleware(LoggingMiddleware)
 
@@ -178,6 +184,9 @@ def create_app() -> FastAPI:
 
     # Include API routers
     app.include_router(api_router, prefix="/profile")
+
+    # Override OpenAPI schema to include JWT Bearer security
+    app.openapi = lambda: custom_openapi(app)
 
     logger.info("FastAPI application created")
     return app
