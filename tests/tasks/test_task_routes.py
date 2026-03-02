@@ -11,7 +11,7 @@ from httpx import AsyncClient
 from core.exceptions.base import TaskLimitError
 from core.models.task import ProfilingTask, TaskStatus
 
-TASKS_ENDPOINT = "/api/v1/profile/tasks"
+TASKS_ENDPOINT = "/profile/v1/profile/tasks"
 
 _CONN = {
     "host": "localhost",
@@ -60,7 +60,7 @@ def _make_task(
 class TestCreateProfilingTask:
     @pytest.mark.asyncio
     async def test_create_task_returns_202(self, async_client: AsyncClient):
-        """POST /api/v1/profile/tasks should return 202 with task_id."""
+        """POST /profile/v1/profile/tasks should return 202 with task_id."""
         mock_task = _make_task()
 
         with patch(
@@ -74,7 +74,7 @@ class TestCreateProfilingTask:
         data = response.json()
         assert data["task_id"] == "test-task-id"
         assert data["status"] == "pending"
-        assert "/api/v1/profile/tasks/test-task-id" == data["status_url"]
+        assert "/profile/v1/profile/tasks/test-task-id" == data["status_url"]
 
     @pytest.mark.asyncio
     async def test_create_task_missing_datasource_returns_422(self, async_client: AsyncClient):

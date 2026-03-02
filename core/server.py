@@ -134,6 +134,9 @@ def create_app() -> FastAPI:
         description="AI-powered platform for data insights and analytics",
         lifespan=lifespan,
         debug=settings.DEBUG,
+        docs_url="/profile/docs",
+        redoc_url="/profile/redoc",
+        openapi_url="/profile/openapi.json",
         swagger_ui_parameters={"persistAuthorization": True},
     )
 
@@ -156,7 +159,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(Exception, generic_exception_handler)
 
     # Health check endpoint
-    @app.get("/health", tags=["Health"])
+    @app.get("/profile/health", tags=["Health"])
     async def health_check():
         """Health check endpoint."""
         return {
@@ -168,13 +171,13 @@ def create_app() -> FastAPI:
         }
 
     # Prometheus metrics endpoint
-    @app.get("/metrics", tags=["Monitoring"])
+    @app.get("/profile/metrics", tags=["Monitoring"])
     async def metrics_endpoint():
         """Prometheus metrics endpoint."""
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     # Include API routers
-    app.include_router(api_router, prefix="/api")
+    app.include_router(api_router, prefix="/profile")
 
     logger.info("FastAPI application created")
     return app

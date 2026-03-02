@@ -42,12 +42,12 @@ class TestTaskCreateResponse:
             task_id="abc-123",
             status=TaskStatusEnum.PENDING,
             created_at=now,
-            status_url="/api/v1/profile/tasks/abc-123",
+            status_url="/profile/v1/profile/tasks/abc-123",
         )
         data = resp.model_dump()
         assert data["task_id"] == "abc-123"
         assert data["status"] == "pending"
-        assert data["status_url"] == "/api/v1/profile/tasks/abc-123"
+        assert data["status_url"] == "/profile/v1/profile/tasks/abc-123"
 
 
 class TestTaskStatusResponse:

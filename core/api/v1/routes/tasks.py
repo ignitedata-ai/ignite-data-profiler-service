@@ -62,7 +62,7 @@ async def create_profiling_task(
         task_id=task.id,
         status=task.status,  # type: ignore
         created_at=task.created_at,
-        status_url=f"/api/v1/profile/tasks/{task.id}",
+        status_url=f"/profile/v1/profile/tasks/{task.id}",
     )
 
 

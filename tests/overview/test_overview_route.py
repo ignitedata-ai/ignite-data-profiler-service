@@ -44,7 +44,7 @@ class TestOverviewRoute:
             {"postgres": AsyncMock(overview=AsyncMock(return_value=mock_overview_result))},
         ):
             resp = await async_client.post(
-                "/api/v1/profile/overview",
+                "/profile/v1/profile/overview",
                 json={
                     "datasource_type": "postgres",
                     "connection": {
@@ -67,7 +67,7 @@ class TestOverviewRoute:
     @pytest.mark.asyncio
     async def test_overview_invalid_datasource_type(self, async_client):
         resp = await async_client.post(
-            "/api/v1/profile/overview",
+            "/profile/v1/profile/overview",
             json={
                 "datasource_type": "oracle",
                 "connection": {
@@ -83,7 +83,7 @@ class TestOverviewRoute:
     @pytest.mark.asyncio
     async def test_overview_missing_connection(self, async_client):
         resp = await async_client.post(
-            "/api/v1/profile/overview",
+            "/profile/v1/profile/overview",
             json={"datasource_type": "postgres"},
         )
         assert resp.status_code == 422
@@ -95,7 +95,7 @@ class TestOverviewRoute:
             {"mysql": AsyncMock(overview=AsyncMock(return_value=mock_overview_result))},
         ):
             resp = await async_client.post(
-                "/api/v1/profile/overview",
+                "/profile/v1/profile/overview",
                 json={
                     "datasource_type": "mysql",
                     "connection": {

@@ -8,7 +8,7 @@ class TestHealthEndpoints:
 
     def test_health_check(self, client: TestClient):
         """Test health check endpoint."""
-        response = client.get("/health")
+        response = client.get("/profile/health")
 
         assert response.status_code == 200
         data = response.json()
@@ -22,7 +22,7 @@ class TestHealthEndpoints:
     @pytest.mark.asyncio
     async def test_health_check_async(self, async_client: AsyncClient):
         """Test health check endpoint with async client."""
-        response = await async_client.get("/health")
+        response = await async_client.get("/profile/health")
 
         assert response.status_code == 200
         data = response.json()
