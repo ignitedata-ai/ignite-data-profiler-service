@@ -66,6 +66,9 @@ class _SucceedingClient(BaseLLMClient):
     async def _synthesize_kpis(self, all_domain_kpis: list[KPITerm]) -> list[KPITerm]:
         return all_domain_kpis
 
+    async def _judge_filter_columns(self, table_name: str, table_role: str, candidates: list[dict]) -> list[dict]:
+        return []
+
 
 class _FailingClient(BaseLLMClient):
     provider_name = "test"
@@ -86,6 +89,9 @@ class _FailingClient(BaseLLMClient):
         raise RuntimeError("LLM API error")
 
     async def _synthesize_kpis(self, all_domain_kpis: list[KPITerm]) -> list[KPITerm]:
+        raise RuntimeError("LLM API error")
+
+    async def _judge_filter_columns(self, table_name: str, table_role: str, candidates: list[dict]) -> list[dict]:
         raise RuntimeError("LLM API error")
 
 
@@ -118,6 +124,9 @@ class _PartialClient(BaseLLMClient):
     async def _synthesize_kpis(self, all_domain_kpis: list[KPITerm]) -> list[KPITerm]:
         return all_domain_kpis
 
+    async def _judge_filter_columns(self, table_name: str, table_role: str, candidates: list[dict]) -> list[dict]:
+        return []
+
 
 class _NoneReturningClient(BaseLLMClient):
     """Returns None / empty list for all tables (empty response)."""
@@ -141,6 +150,9 @@ class _NoneReturningClient(BaseLLMClient):
 
     async def _synthesize_kpis(self, all_domain_kpis: list[KPITerm]) -> list[KPITerm]:
         return all_domain_kpis
+
+    async def _judge_filter_columns(self, table_name: str, table_role: str, candidates: list[dict]) -> list[dict]:
+        return []
 
 
 # ── Tests ──────────────────────────────────────────────────────────────────────
@@ -198,6 +210,9 @@ class TestBatchAugmentation:
 
             async def _synthesize_kpis(self, all_domain_kpis: list[KPITerm]) -> list[KPITerm]:
                 return all_domain_kpis
+
+            async def _judge_filter_columns(self, table_name: str, table_role: str, candidates: list[dict]) -> list[dict]:
+                return []
 
         client = _TrackingClient()
         tables = [_make_table(f"t{i}") for i in range(7)]
@@ -296,6 +311,9 @@ class TestColumnBatchAugmentation:
             async def _synthesize_kpis(self, all_domain_kpis: list[KPITerm]) -> list[KPITerm]:
                 return all_domain_kpis
 
+            async def _judge_filter_columns(self, table_name: str, table_role: str, candidates: list[dict]) -> list[dict]:
+                return []
+
         client = _TrackingClient()
         table = _make_table("users")
         pairs = [(_make_column(f"col_{i}"), table) for i in range(7)]
@@ -378,6 +396,9 @@ class TestGlossaryAugmentation:
 
             async def _synthesize_kpis(self, all_domain_kpis: list[KPITerm]) -> list[KPITerm]:
                 return all_domain_kpis
+
+            async def _judge_filter_columns(self, table_name: str, table_role: str, candidates: list[dict]) -> list[dict]:
+                return []
 
         client = _TrackingClient()
         tables = [_make_table(f"t{i}") for i in range(7)]

@@ -329,6 +329,11 @@ def _do_fetch_column_stats_sync(
         cn = col["name"]
         if common_by_col[cn]["distinct_count"] <= config.top_values_cardinality_threshold:
             top_values_by_col[cn] = _fetch_top_values_sync(conn, read_expr, cn, total_count, config.top_values_limit)
+    # Low-cardinality numeric columns.
+    for col in numeric_cols:
+        cn = col["name"]
+        if common_by_col[cn]["distinct_count"] <= config.top_values_cardinality_threshold:
+            top_values_by_col[cn] = _fetch_top_values_sync(conn, read_expr, cn, total_count, config.top_values_limit)
 
     # ── Phase 4: IQR-based outlier counts for numeric columns ─────────────
     for cn, ns in numeric_stats_map.items():
@@ -642,6 +647,7 @@ class S3FileProfilerService(BaseProfilerService):
 
     service_name = "AWS S3 (DuckDB)"
     span_name = "profiler.s3_file"
+    _datasource_type = "s3_file"
 
     def _span_attributes(self, conn: S3ConnectionConfig) -> dict[str, str | int]:
         attrs: dict[str, str | int] = {
@@ -849,6 +855,12 @@ class S3FileProfilerService(BaseProfilerService):
                 progress.update(phase="augmenting", percent=90, detail={"augmentation_step": "kpis"})
                 await progress.flush()
             response = await self._augment_kpis_response(response, cfg)
+
+        if cfg.detect_filter_columns:
+            if progress:
+                progress.update(phase="detecting_filters", percent=93, detail={"augmentation_step": "filter_columns"})
+                await progress.flush()
+            response = await self._detect_filter_columns(response, cfg, connector=None)
 
         if progress:
             progress.update(phase="completed", percent=100)

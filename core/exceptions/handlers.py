@@ -16,6 +16,7 @@ from core.exceptions.base import (
     ConfigurationError,
     DatabaseError,
     ExternalServiceError,
+    InternalTimeoutError,
     NotFoundError,
     ProfilingTimeoutError,
     TaskLimitError,
@@ -59,6 +60,7 @@ async def exception_handler(request: Request, exc: BaseException) -> JSONRespons
         CacheError: status.HTTP_500_INTERNAL_SERVER_ERROR,
         ExternalServiceError: status.HTTP_502_BAD_GATEWAY,
         ConfigurationError: status.HTTP_400_BAD_REQUEST,
+        InternalTimeoutError: status.HTTP_504_GATEWAY_TIMEOUT,
         ProfilingTimeoutError: status.HTTP_408_REQUEST_TIMEOUT,
         TaskLimitError: status.HTTP_429_TOO_MANY_REQUESTS,
     }

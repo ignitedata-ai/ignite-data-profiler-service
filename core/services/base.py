@@ -29,7 +29,7 @@ from ignite_data_connectors import (
 
 from core.api.v1.schemas.profiler import ProfilingConfig, ProfilingResponse
 from core.exceptions import ConfigurationError, DatabaseError, ExternalServiceError
-from core.exceptions.base import ProfilingTimeoutError
+from core.exceptions.base import InternalTimeoutError, ProfilingTimeoutError
 from core.logging import get_logger
 from core.observability import get_tracer
 
@@ -137,10 +137,72 @@ class BaseProfilerService(ABC):
                         progress.update(phase="profiling", percent=10)
                         await progress.flush()
 
-                    raw = await asyncio.wait_for(
-                        self._run(db, cfg, progress=progress),
-                        timeout=cfg.timeout_seconds,
+                    try:
+                        raw = await asyncio.wait_for(
+                            self._run(db, cfg, progress=progress),
+                            timeout=cfg.timeout_seconds,
+                        )
+                    except TimeoutError as exc:
+                        # asyncio.wait_for raises TimeoutError when the
+                        # deadline expires, but so does asyncpg when pool
+                        # acquisition or a query times out *inside* _run.
+                        # Detect whether the overall deadline actually
+                        # elapsed to distinguish the two cases.
+                        elapsed = (datetime.now(UTC) - profiled_at).total_seconds()
+                        if elapsed >= cfg.timeout_seconds * 0.95:
+                            raise  # genuine overall timeout — handled below
+                        raise InternalTimeoutError(
+                            message=(
+                                f"An internal timeout occurred after {elapsed:.0f}s "
+                                f"(overall limit is {cfg.timeout_seconds}s). "
+                                "This usually means the connection pool is exhausted "
+                                "— consider increasing pool_max_size or reducing "
+                                "max_concurrent_tables."
+                            ),
+                            source="pool_or_query",
+                        ) from exc
+
+                    logger.info(
+                        "Profiling complete",
+                        **ctx,
+                        schema_count=len(raw.get("schemas", [])),
                     )
+                    response = self._assemble_response(raw, profiled_at)
+
+                    # ── Post-processing (connector still open) ────────────
+
+                    if cfg.augment_descriptions:
+                        if progress:
+                            progress.update(phase="augmenting", percent=70, detail={"augmentation_step": "table_descriptions"})
+                            await progress.flush()
+                        response = await self._augment_response(response, cfg)
+
+                    if cfg.augment_column_descriptions:
+                        if progress:
+                            progress.update(phase="augmenting", percent=80, detail={"augmentation_step": "column_descriptions"})
+                            await progress.flush()
+                        response = await self._augment_column_response(response, cfg)
+
+                    if cfg.augment_glossary:
+                        if progress:
+                            progress.update(phase="augmenting", percent=85, detail={"augmentation_step": "glossary"})
+                            await progress.flush()
+                        response = await self._augment_glossary_response(response, cfg)
+
+                    if cfg.infer_kpis:
+                        if progress:
+                            progress.update(phase="augmenting", percent=90, detail={"augmentation_step": "kpis"})
+                            await progress.flush()
+                        response = await self._augment_kpis_response(response, cfg)
+
+                    if cfg.detect_filter_columns:
+                        if progress:
+                            progress.update(phase="detecting_filters", percent=93, detail={"augmentation_step": "filter_columns"})
+                            await progress.flush()
+                        response = await self._detect_filter_columns(response, cfg, db)
+
+            except InternalTimeoutError:
+                raise  # already a well-described service exception
 
             except TimeoutError:
                 logger.warning(
@@ -161,37 +223,6 @@ class BaseProfilerService(ABC):
                     exc_info=True,
                 )
                 raise self._map_error(exc, ctx) from exc
-
-        logger.info(
-            "Profiling complete",
-            **ctx,
-            schema_count=len(raw.get("schemas", [])),
-        )
-        response = self._assemble_response(raw, profiled_at)
-
-        if cfg.augment_descriptions:
-            if progress:
-                progress.update(phase="augmenting", percent=70, detail={"augmentation_step": "table_descriptions"})
-                await progress.flush()
-            response = await self._augment_response(response, cfg)
-
-        if cfg.augment_column_descriptions:
-            if progress:
-                progress.update(phase="augmenting", percent=80, detail={"augmentation_step": "column_descriptions"})
-                await progress.flush()
-            response = await self._augment_column_response(response, cfg)
-
-        if cfg.augment_glossary:
-            if progress:
-                progress.update(phase="augmenting", percent=85, detail={"augmentation_step": "glossary"})
-                await progress.flush()
-            response = await self._augment_glossary_response(response, cfg)
-
-        if cfg.infer_kpis:
-            if progress:
-                progress.update(phase="augmenting", percent=90, detail={"augmentation_step": "kpis"})
-                await progress.flush()
-            response = await self._augment_kpis_response(response, cfg)
 
         if progress:
             progress.update(phase="completed", percent=100)
@@ -394,6 +425,50 @@ class BaseProfilerService(ABC):
                 "LLM KPI inference complete",
                 kpi_count=len(kpis),
                 llm_duration_seconds=round(time.monotonic() - t_llm, 3),
+            )
+
+        return response
+
+    async def _detect_filter_columns(
+        self,
+        response: ProfilingResponse,
+        cfg: ProfilingConfig,
+        connector: BaseConnector | None = None,
+    ) -> ProfilingResponse:
+        """Run the filter column detection pipeline.
+
+        Always a best-effort step: if any stage fails, the original
+        ``response`` is returned unmodified.
+        """
+        from core.llm import get_llm_client
+        from core.services.filters.pipeline import FilterDetectionPipeline
+        from core.services.filters.schema_introspector import INTROSPECTOR_REGISTRY, NullSchemaIntrospector
+
+        introspector_cls = INTROSPECTOR_REGISTRY.get(
+            getattr(self, "_datasource_type", ""),
+            NullSchemaIntrospector,
+        )
+        introspector = introspector_cls()
+        pipeline = FilterDetectionPipeline(introspector)
+
+        llm = get_llm_client()
+
+        logger.info("Starting filter column detection")
+        t0 = time.monotonic()
+        try:
+            response = await pipeline.detect(response, connector=connector, llm=llm)
+        except Exception as exc:
+            logger.error(
+                "Filter column detection encountered an unexpected error",
+                error=str(exc),
+                exc_info=True,
+            )
+        else:
+            total_filters = sum(len(t.filter_columns or []) for s in response.schemas for t in s.tables)
+            logger.info(
+                "Filter column detection complete",
+                filter_count=total_filters,
+                duration_seconds=round(time.monotonic() - t0, 3),
             )
 
         return response

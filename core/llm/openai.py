@@ -23,6 +23,7 @@ _MAX_SIBLING_COLUMNS = 10
 # Max tokens reserved for glossary inference responses (5 terms with descriptions).
 _GLOSSARY_MAX_TOKENS = 1000
 # Max tokens for the three KPI inference phases.
+_FILTER_JUDGE_MAX_TOKENS = 1500  # Judge response for filter columns
 _KPI_CLUSTER_MAX_TOKENS = 800  # Phase A: domain names + table name lists only
 _KPI_GENERATE_MAX_TOKENS = 1500  # Phase B: up to ~15 KPIs with descriptions
 _KPI_SYNTHESIZE_MAX_TOKENS = 2000  # Phase C: full deduplication output
@@ -332,6 +333,44 @@ Respond ONLY with valid JSON in exactly this format (no markdown, no preamble):
 """
 
 
+def _build_filter_judge_prompt(
+    table_name: str,
+    table_role: str,
+    candidates: list[dict],
+) -> str:
+    """Construct the prompt for the filter column judge."""
+    import json as _json
+
+    candidates_json = _json.dumps(candidates, indent=2)
+    return f"""You are judging whether database columns are suitable as analytical filter columns — \
+columns that data analysts would use to narrow down or slice data in dashboards and reports.
+
+Table: {table_name}
+Table role: {table_role}
+
+Below are candidate columns with pre-computed evidence scores. For each column, decide whether \
+it is a good analytical filter based on the evidence provided.
+
+Be SKEPTICAL of:
+- Audit/metadata columns (created_at, updated_at) — they look temporal but are rarely used as filters
+- Low-cardinality ID columns — they may be coded values, or just small lookup IDs
+- Columns with very high null ratios — analysts avoid filtering on mostly-empty columns
+
+Candidates:
+{candidates_json}
+
+For each candidate, respond with:
+- column_name: the column name (must match exactly)
+- llm_confidence: your confidence that this is a good filter (0.0-1.0)
+- llm_filter_type: one of "temporal", "boolean", "categorical", "range"
+- agrees_with_heuristic: true if you broadly agree with the composite_score, false if you disagree
+- reasoning: 1 sentence explaining your judgment
+
+Respond ONLY with valid JSON in exactly this format (no markdown, no preamble):
+{{"columns": [{{"column_name": "...", "llm_confidence": 0.8, "llm_filter_type": "categorical", "agrees_with_heuristic": true, "reasoning": "..."}}]}}
+"""
+
+
 class OpenAILLMClient(BaseLLMClient):
     """LLM client backed by OpenAI's Chat Completions API (async).
 
@@ -492,6 +531,67 @@ class OpenAILLMClient(BaseLLMClient):
             )
             return []
 
+    async def _judge_filter_columns(
+        self,
+        table_name: str,
+        table_role: str,
+        candidates: list[dict],
+    ) -> list[dict]:
+        """Call OpenAI to judge filter column candidates."""
+        prompt = _build_filter_judge_prompt(table_name, table_role, candidates)
+        logger.debug(
+            "Requesting filter column judgment",
+            provider=self.provider_name,
+            model=self._model,
+            table=table_name,
+            candidate_count=len(candidates),
+        )
+
+        response = await self._client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a data analytics expert judging whether database columns "
+                        "are suitable as analytical filters. Always respond with valid JSON only."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=self._temperature,
+            max_tokens=_FILTER_JUDGE_MAX_TOKENS,
+            response_format={"type": "json_object"},
+        )
+
+        raw = response.choices[0].message.content
+        if not raw:
+            return []
+
+        try:
+            data = json.loads(raw)
+            columns = data.get("columns", [])
+            results: list[dict] = []
+            for item in columns:
+                results.append(
+                    {
+                        "column_name": str(item.get("column_name", "")),
+                        "llm_confidence": float(item.get("llm_confidence", 0.5)),
+                        "llm_filter_type": str(item.get("llm_filter_type", "categorical")),
+                        "agrees_with_heuristic": bool(item.get("agrees_with_heuristic", True)),
+                        "reasoning": str(item.get("reasoning", "")),
+                    }
+                )
+            return results
+        except Exception as exc:
+            logger.warning(
+                "Failed to parse filter judgment from LLM response",
+                provider=self.provider_name,
+                table=table_name,
+                error=str(exc),
+            )
+            return []
+
     async def _cluster_tables_into_domains(
         self,
         tables: list[TableMetadata],
@@ -620,72 +720,3 @@ class OpenAILLMClient(BaseLLMClient):
                 error=str(exc),
             )
             return []
-
-    async def _synthesize_kpis(
-        self,
-        all_domain_kpis: list[KPITerm],
-    ) -> list[KPITerm]:
-        """Phase C: call OpenAI to deduplicate KPIs and add cross-domain ones."""
-        if not all_domain_kpis:
-            return []
-
-        prompt = _build_kpi_synthesize_prompt(all_domain_kpis)
-        logger.debug(
-            "Requesting KPI synthesis",
-            provider=self.provider_name,
-            model=self._model,
-            input_kpi_count=len(all_domain_kpis),
-        )
-
-        response = await self._client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a business intelligence architect specialising in enterprise KPI frameworks. "
-                        "Always respond with valid JSON only."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-            temperature=self._temperature,
-            max_tokens=_KPI_SYNTHESIZE_MAX_TOKENS,
-            response_format={"type": "json_object"},
-        )
-
-        raw = response.choices[0].message.content
-        if not raw:
-            return all_domain_kpis
-
-        try:
-            data = json.loads(raw)
-            kpis_raw = data.get("kpis", [])
-            ta: TypeAdapter[list[KPITerm]] = TypeAdapter(list[KPITerm])
-            synthesized = ta.validate_python(kpis_raw)
-
-            # Strip hallucinated linked_columns.  Valid set is the union of
-            # all linked_columns that survived Phase B validation.
-            valid_columns: set[str] = set()
-            for kpi in all_domain_kpis:
-                valid_columns.update(kpi.linked_columns)
-            _strip_invalid_linked_columns(
-                synthesized,
-                valid_columns,
-                self.provider_name,
-                "synthesis",
-            )
-
-            logger.debug(
-                "KPI synthesis complete",
-                provider=self.provider_name,
-                output_kpi_count=len(synthesized),
-            )
-            return all_domain_kpis + synthesized
-        except Exception as exc:
-            logger.warning(
-                "Failed to parse synthesized KPIs from LLM response",
-                provider=self.provider_name,
-                error=str(exc),
-            )
-            return all_domain_kpis

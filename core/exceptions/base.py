@@ -162,6 +162,28 @@ class ProfilingTimeoutError(BaseException):
         super().__init__(message, details=details, **kwargs)
 
 
+class InternalTimeoutError(BaseException):
+    """Raised when an internal operation (pool acquisition, query) times out.
+
+    This is distinct from :class:`ProfilingTimeoutError` which represents the
+    overall profiling deadline.  ``InternalTimeoutError`` wraps
+    ``asyncio.TimeoutError`` that originates *inside* the profiling run — for
+    example when the connection-pool acquisition timeout is exceeded because
+    all connections are busy.
+    """
+
+    def __init__(
+        self,
+        message: str = "Internal operation timed out (connection pool or query)",
+        source: str | None = None,
+        **kwargs,
+    ) -> None:
+        details = kwargs.get("details", {})
+        if source is not None:
+            details["source"] = source
+        super().__init__(message, details=details, **kwargs)
+
+
 class TaskLimitError(BaseException):
     """Raised when the maximum number of concurrent profiling tasks is reached."""
 

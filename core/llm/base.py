@@ -137,19 +137,27 @@ class BaseLLMClient(ABC):
         """
 
     @abstractmethod
-    async def _synthesize_kpis(
+    async def _judge_filter_columns(
         self,
-        all_domain_kpis: list[KPITerm],
-    ) -> list[KPITerm]:
-        """Phase C — deduplicate domain KPIs and add cross-domain KPIs.
+        table_name: str,
+        table_role: str,
+        candidates: list[dict],
+    ) -> list[dict]:
+        """Judge whether candidate columns are suitable analytical filters.
+
+        The LLM receives pre-computed evidence (scores, cardinality, data
+        type) and acts as a judge — it validates rather than generates.
 
         Args:
-            all_domain_kpis: Flat list of KPIs produced by all Phase B calls.
+            table_name: Qualified table name (``schema.table``).
+            table_role: ``"fact"``, ``"dimension"``, or ``"unknown"``.
+            candidates: List of dicts with pre-computed signal data per column.
 
         Returns:
-            The deduplicated list with cross-domain KPIs appended.
-            Return ``all_domain_kpis`` unchanged on failure so the caller
-            always has a safe fallback.
+            A list of dicts, one per candidate, each containing at minimum:
+            ``column_name``, ``llm_confidence`` (0.0–1.0),
+            ``llm_filter_type``, ``agrees_with_heuristic`` (bool),
+            ``reasoning`` (str).
 
         Raises:
             Any exception: callers treat raised exceptions as soft failures.
@@ -281,6 +289,38 @@ class BaseLLMClient(ABC):
                 error=str(exc),
             )
 
+    async def judge_filter_columns(
+        self,
+        table_name: str,
+        table_role: str,
+        candidates: list[dict],
+    ) -> list[dict]:
+        """Send filter candidates to the LLM for evidence-based judgment.
+
+        Wraps ``_judge_filter_columns`` with error isolation.
+
+        Returns:
+            A list of judgment dicts, or an empty list on failure.
+        """
+        try:
+            results = await self._judge_filter_columns(table_name, table_role, candidates)
+            logger.debug(
+                "LLM filter judgment received",
+                provider=self.provider_name,
+                table=table_name,
+                candidate_count=len(candidates),
+                result_count=len(results),
+            )
+            return results
+        except Exception as exc:
+            logger.warning(
+                "LLM filter judgment failed",
+                provider=self.provider_name,
+                table=table_name,
+                error=str(exc),
+            )
+            return []
+
     async def augment_kpis(
         self,
         tables: list[TableMetadata],
@@ -368,22 +408,4 @@ class BaseLLMClient(ABC):
             )
             return []
 
-        # ── Phase C: synthesize / deduplicate ─────────────────────────────────
-        try:
-            final_kpis = await self._synthesize_kpis(all_domain_kpis)
-            logger.debug(
-                "KPI inference pipeline complete",
-                provider=self.provider_name,
-                input_tables=len(tables),
-                domain_count=len(domain_clusters),
-                raw_kpi_count=len(all_domain_kpis),
-                final_kpi_count=len(final_kpis),
-            )
-            return final_kpis
-        except Exception as exc:
-            logger.warning(
-                "KPI synthesis (Phase C) failed — returning raw domain KPIs",
-                provider=self.provider_name,
-                error=str(exc),
-            )
-            return all_domain_kpis
+        return all_domain_kpis

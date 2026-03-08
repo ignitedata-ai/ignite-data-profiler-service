@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import jwt
-from jwt.exceptions import DecodeError, ExpiredSignatureError, InvalidTokenError
 
 from core.logging import get_logger
 
@@ -42,8 +41,7 @@ def load_public_key(*, force_reload: bool = False) -> str:
     key_path = get_public_key_path()
     if not key_path.exists():
         raise FileNotFoundError(
-            f"JWT public key not found at {key_path}. "
-            "Ensure keys/public.pem exists or set JWT_PUBLIC_KEY env var."
+            f"JWT public key not found at {key_path}. Ensure keys/public.pem exists or set JWT_PUBLIC_KEY env var."
         )
 
     key_content = key_path.read_text().strip()
