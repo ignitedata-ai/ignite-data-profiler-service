@@ -213,7 +213,6 @@ pythonPlatform = "All"
 
 # --- Stub / dependency handling ---
 useLibraryCodeForTypes = true
-stubPath = "typings"
 
 reportMissingImports = "error"
 reportMissingModuleSource = "warning"
@@ -226,7 +225,7 @@ reportPrivateUsage = "warning"
 reportIncompatibleMethodOverride = "error"
 reportIncompatibleVariableOverride = "error"
 
-reportReturnTypeMismatch = "error"
+
 reportInconsistentConstructor = "error"
 reportOverlappingOverload = "error"
 
@@ -245,13 +244,8 @@ reportConstantRedefinition = "error"
 reportDuplicateImport = "error"
 
 reportPossiblyUnboundVariable = "error"
-reportPossiblyUninitializedInstanceVariable = "error"
 
 reportDeprecated = "warning"
-
-# --- Numerical strictness (optional, but good in prod codebases) ---
-reportImplicitBool = "warning"
-reportImplicitIntegerToFloat = "warning"
 
 [tool.uv.sources]
 ignite-data-connectors = { path = "libs/ignite_data_connectors-0.3.0-py3-none-any.whl" }

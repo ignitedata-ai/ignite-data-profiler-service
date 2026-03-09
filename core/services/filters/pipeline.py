@@ -152,6 +152,7 @@ class FilterDetectionPipeline:
                     if final_score >= FINAL_INCLUDE_THRESHOLD:
                         results.append(
                             FilterColumnInfo(
+                                filter_name=j.get("filter_name", ""),
                                 column_name=c.column_name,
                                 confidence=final_score,
                                 confidence_source=source,
@@ -184,6 +185,7 @@ class FilterDetectionPipeline:
     @staticmethod
     def _to_filter_info(c: ColumnFilterCandidate, source: str) -> FilterColumnInfo:
         return FilterColumnInfo(
+            filter_name=c.column_name,
             column_name=c.column_name,
             confidence=c.composite_score,
             confidence_source=source,

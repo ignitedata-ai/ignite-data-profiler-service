@@ -228,6 +228,7 @@ class KPITerm(BaseModel):
 class FilterColumnInfo(BaseModel):
     """A column identified as suitable for analytical filtering."""
 
+    filter_name: str = Field(description="Name of the filter")
     column_name: str = Field(description="Name of the filter column")
     confidence: float = Field(ge=0.0, le=1.0, description="Confidence score (0.0–1.0)")
     confidence_source: str = Field(

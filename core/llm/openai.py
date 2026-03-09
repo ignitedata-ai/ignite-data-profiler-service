@@ -23,10 +23,9 @@ _MAX_SIBLING_COLUMNS = 10
 # Max tokens reserved for glossary inference responses (5 terms with descriptions).
 _GLOSSARY_MAX_TOKENS = 1000
 # Max tokens for the three KPI inference phases.
-_FILTER_JUDGE_MAX_TOKENS = 1500  # Judge response for filter columns
+_FILTER_JUDGE_MAX_TOKENS = 4000  # Judge response for filter columns
 _KPI_CLUSTER_MAX_TOKENS = 800  # Phase A: domain names + table name lists only
-_KPI_GENERATE_MAX_TOKENS = 1500  # Phase B: up to ~15 KPIs with descriptions
-_KPI_SYNTHESIZE_MAX_TOKENS = 2000  # Phase C: full deduplication output
+_KPI_GENERATE_MAX_TOKENS = 4000  # Phase B: up to ~15 KPIs with description
 # Max tables per domain to include in the Phase B prompt.
 _KPI_MAX_TABLES_PER_DOMAIN = 15
 # Max columns per table included in the Phase B domain prompt.
@@ -296,43 +295,6 @@ Respond ONLY with valid JSON in exactly this format (no markdown, no preamble):
 """
 
 
-def _build_kpi_synthesize_prompt(all_domain_kpis: list[KPITerm]) -> str:
-    """Construct the Phase C synthesis prompt.
-
-    Sends KPI names and descriptions only — linked_columns are omitted to keep
-    tokens bounded and are re-attached post-parse via lookup.
-    """
-    kpi_lines = "\n".join(f"  - {kpi.name}: {kpi.description}" for kpi in all_domain_kpis)
-    return f"""You are a business intelligence architect reviewing a company's KPI catalog.
-
-Below are KPIs inferred from a database schema:
-{kpi_lines}
-
-Tasks:
-Infer up to 5 NEW cross-domain KPIs that combine insights from multiple domains above.
-Each cross-domain KPI must:
-- Provide a concrete, executable SQL calculation (omit the KPI entirely if none exists)
-- Represent a meaningful business ratio, rate, or normalized metric (not a trivial aggregation)
-- Be dashboard-ready: trackable over time, visualizable, and actionable
-Do NOT include abstract or hollow KPIs that have no actionable SQL expression.
-Do NOT generate trivial COUNT(*) or simple SUM metrics.
-
-For each KPI in your output provide:
-- name: KPI name
-- description: 1-2 sentences
-- calculation: a valid SQL expression, or omit the KPI entirely if unreliable
-- linked_columns: columns directly referenced in the calculation
-
-## CRITICAL CONSTRAINT on linked_columns:
-- linked_columns MUST reference only columns that exist in the KPIs listed above.
-- Use table.column format only. DO NOT include schema names.
-- If unsure about a column name, omit it from linked_columns rather than guessing.
-
-Respond ONLY with valid JSON in exactly this format (no markdown, no preamble):
-{{"kpis": [{{"name": "...", "description": "...", "calculation": "...", "linked_columns": []}}]}}
-"""
-
-
 def _build_filter_judge_prompt(
     table_name: str,
     table_role: str,
@@ -360,6 +322,7 @@ Candidates:
 {candidates_json}
 
 For each candidate, respond with:
+- filter_name: the name of the filter (must represent a business meaningful filter)
 - column_name: the column name (must match exactly)
 - llm_confidence: your confidence that this is a good filter (0.0-1.0)
 - llm_filter_type: one of "temporal", "boolean", "categorical", "range"
@@ -367,7 +330,18 @@ For each candidate, respond with:
 - reasoning: 1 sentence explaining your judgment
 
 Respond ONLY with valid JSON in exactly this format (no markdown, no preamble):
-{{"columns": [{{"column_name": "...", "llm_confidence": 0.8, "llm_filter_type": "categorical", "agrees_with_heuristic": true, "reasoning": "..."}}]}}
+{{
+    "columns": [
+        {{
+        "filter_name": "...",
+        "column_name": "...",
+        "llm_confidence": 0.8,
+        "llm_filter_type": "categorical",
+        "agrees_with_heuristic": true,
+        "reasoning": "..."
+        }}
+    ]
+}}
 """
 
 
@@ -575,6 +549,7 @@ class OpenAILLMClient(BaseLLMClient):
             for item in columns:
                 results.append(
                     {
+                        "filter_name": str(item.get("filter_name", "")),
                         "column_name": str(item.get("column_name", "")),
                         "llm_confidence": float(item.get("llm_confidence", 0.5)),
                         "llm_filter_type": str(item.get("llm_filter_type", "categorical")),
