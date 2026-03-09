@@ -107,6 +107,10 @@ class Settings(BaseSettings):
     LLM_MAX_TOKENS: int = Field(default=500, ge=50, le=2000)
     LLM_REQUEST_TIMEOUT_SECONDS: float = Field(default=30.0, ge=1.0, le=120.0)
 
+    # Portkey Gateway
+    PORTKEY_API_KEY: str = Field(default="", description="Portkey API key")
+    PORTKEY_VIRTUAL_KEY: str = Field(default="", description="Portkey virtual key for OpenAI routing")
+
     AWS_ACCESS_KEY_ID: str | None = Field(default=None)
     AWS_SECRET_ACCESS_KEY: str | None = Field(default=None)
     AWS_SESSION_TOKEN: str | None = Field(default=None)

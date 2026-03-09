@@ -43,8 +43,12 @@ dependencies = [
     "slowapi>=0.1.9",
     "redis>=7.2.0",
     "openai>=1.50.0",
+    "portkey-ai>=1.0.0",
     "duckdb>=1.4.4",
     "ignite-data-connectors",
+    "ignite-llmops-lib-cost-tracker@ git+https://github.com/ignitedata-ai/ignite-llmops-lib.git#subdirectory=packages/cost-tracker",
+    "ignite-llmops-lib-token-counter",
+    "ignite-llmops-lib-latency-tracker",
 ]
 
 [dependency-groups]
@@ -255,3 +259,5 @@ reportImplicitIntegerToFloat = "warning"
 
 [tool.uv.sources]
 ignite-data-connectors = { path = "libs/ignite_data_connectors-0.3.0-py3-none-any.whl" }
+ignite-llmops-lib-token-counter = { git = "https://github.com/ignitedata-ai/ignite-llmops-lib.git", subdirectory = "packages/token-counter" }
+ignite-llmops-lib-latency-tracker = { git = "https://github.com/ignitedata-ai/ignite-llmops-lib.git", subdirectory = "packages/latency-tracker" }
