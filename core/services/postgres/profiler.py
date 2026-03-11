@@ -174,8 +174,14 @@ class PostgresProfiler:
 
             filtered_tables = self._filter_tables(table_rows)
 
+            sem = asyncio.Semaphore(self._config.max_concurrent_tables)
+
+            async def _bounded_profile(row: dict[str, Any]) -> dict[str, Any]:
+                async with sem:
+                    return await self._profile_table(row, schema_name)
+
             table_results = await asyncio.gather(
-                *[self._profile_table(row, schema_name) for row in filtered_tables],
+                *[_bounded_profile(row) for row in filtered_tables],
             )
 
             # Derive schema owner from first table or view owner; fall back to empty string.
@@ -493,6 +499,12 @@ class PostgresProfiler:
             if common_by_col[cn]["distinct_count"] <= self._config.top_values_cardinality_threshold:
                 tv_col_names.append(cn)
                 tv_tasks.append(self._fetch_top_values(fqt, cn, total_count))
+        # Low-cardinality numeric columns.
+        for col in numeric_cols:
+            cn = col["name"]
+            if common_by_col[cn]["distinct_count"] <= self._config.top_values_cardinality_threshold:
+                tv_col_names.append(cn)
+                tv_tasks.append(self._fetch_top_values(fqt, cn, total_count))
         if tv_tasks:
             tv_results = await asyncio.gather(*tv_tasks)
             for cn, tv in zip(tv_col_names, tv_results, strict=True):
@@ -700,6 +712,7 @@ class PostgresProfilerService(BaseProfilerService):
 
     service_name = "PostgreSQL"
     span_name = "profiler.postgres"
+    _datasource_type = "postgres"
 
     def _span_attributes(self, conn: PostgresConfig) -> dict[str, str | int]:
         return {

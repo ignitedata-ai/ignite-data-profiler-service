@@ -66,7 +66,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
     def _is_docs_endpoint(self, path: str) -> bool:
         """Check if the request is for OpenAPI docs endpoints."""
-        return path in ["/profile/docs", "/profile/redoc", "/profile/openapi.json"] or path.startswith("/profile/docs/") or path.startswith("/profile/redoc/")
+        return (
+            path in ["/profile/docs", "/profile/redoc", "/profile/openapi.json"]
+            or path.startswith("/profile/docs/")
+            or path.startswith("/profile/redoc/")
+        )
 
     def _get_docs_csp(self) -> str:
         """Get a more permissive CSP for OpenAPI documentation."""

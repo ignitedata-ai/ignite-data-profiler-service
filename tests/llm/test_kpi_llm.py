@@ -67,6 +67,9 @@ class _BaseStub(BaseLLMClient):
     async def _synthesize_kpis(self, all_domain_kpis: list[KPITerm]) -> list[KPITerm]:
         return all_domain_kpis
 
+    async def _judge_filter_columns(self, table_name: str, table_role: str, candidates: list[dict]) -> list[dict]:
+        return []
+
 
 # ── Domain-specific stubs ──────────────────────────────────────────────────────
 

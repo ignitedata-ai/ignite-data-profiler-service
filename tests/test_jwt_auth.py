@@ -15,7 +15,6 @@ from fastapi.testclient import TestClient
 from core.middlewares.jwt_auth import JWTAuthMiddleware, _is_public_path
 from core.security.jwt import reset_key_cache, verify_token
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
@@ -32,10 +31,14 @@ def rsa_keypair():
         encryption_algorithm=serialization.NoEncryption(),
     ).decode()
 
-    public_pem = private_key.public_key().public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo,
-    ).decode()
+    public_pem = (
+        private_key.public_key()
+        .public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode()
+    )
 
     return private_pem, public_pem
 

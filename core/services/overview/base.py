@@ -19,7 +19,7 @@ from ignite_data_connectors import (
 
 from core.api.v1.schemas.overview import DatabaseOverview, OverviewConfig
 from core.exceptions import ConfigurationError, DatabaseError, ExternalServiceError
-from core.exceptions.base import ProfilingTimeoutError
+from core.exceptions.base import InternalTimeoutError, ProfilingTimeoutError
 from core.logging import get_logger
 from core.observability import get_tracer
 
@@ -67,10 +67,26 @@ class BaseOverviewService(ABC):
                     await db.test_connection()
                     logger.info("Overview: connection test passed", **ctx)
 
-                    result = await asyncio.wait_for(
-                        self._fetch_overview(db, cfg, conn),
-                        timeout=cfg.timeout_seconds,
-                    )
+                    try:
+                        result = await asyncio.wait_for(
+                            self._fetch_overview(db, cfg, conn),
+                            timeout=cfg.timeout_seconds,
+                        )
+                    except TimeoutError as exc:
+                        elapsed = time.monotonic() - t_start
+                        if elapsed >= cfg.timeout_seconds * 0.95:
+                            raise
+                        raise InternalTimeoutError(
+                            message=(
+                                f"An internal timeout occurred after {elapsed:.0f}s "
+                                f"(overall limit is {cfg.timeout_seconds}s). "
+                                "This usually means the connection pool is exhausted."
+                            ),
+                            source="pool_or_query",
+                        ) from exc
+
+            except InternalTimeoutError:
+                raise
 
             except TimeoutError:
                 logger.warning(

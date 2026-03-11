@@ -1,0 +1,1 @@
+"""Filter column detection pipeline."""

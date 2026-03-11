@@ -120,6 +120,24 @@ class ProfilingConfig(BaseModel):
         le=10000,
         description="String columns with distinct_count above this threshold will not have top_values computed",
     )
+    max_concurrent_tables: int = Field(
+        default=3,
+        ge=1,
+        le=50,
+        description=(
+            "Maximum number of tables to profile concurrently per schema. "
+            "Lower values reduce connection pool pressure; raise if the pool "
+            "is large and latency matters more than connection count."
+        ),
+    )
+    detect_filter_columns: bool = Field(
+        default=False,
+        description=(
+            "Detect columns suitable for analytical filtering (status fields, date ranges, categories, etc.). "
+            "Runs a multi-stage pipeline using schema signals and statistical heuristics. "
+            "Best results when include_column_stats=True. Non-fatal."
+        ),
+    )
 
     # ── Per-request LLM credentials (optional) ────────────────────────────────
     portkey_api_key: str | None = Field(
@@ -221,6 +239,21 @@ class KPITerm(BaseModel):
     description: str
     calculation: str | None = None
     linked_columns: list[str] = Field(default_factory=list)
+
+
+class FilterColumnInfo(BaseModel):
+    """A column identified as suitable for analytical filtering."""
+
+    filter_name: str = Field(description="Name of the filter")
+    column_name: str = Field(description="Name of the filter column")
+    confidence: float = Field(ge=0.0, le=1.0, description="Confidence score (0.0–1.0)")
+    confidence_source: str = Field(
+        description="How the confidence was determined: heuristic_only, llm_agreed, llm_adjusted, or flagged_for_review",
+    )
+    filter_type: str = Field(
+        description="Classification: temporal, boolean, categorical, or range",
+    )
+    reasoning: str | None = Field(default=None, description="Brief explanation of why this column was selected")
 
 
 class TopValueEntry(BaseModel):
@@ -360,6 +393,11 @@ class TableMetadata(BaseModel):
     indexes: list[IndexMetadata] | None
     relationships: list[RelationshipMetadata] | None
     glossary: list[GlossaryTerm] | None = None
+    table_role: str | None = Field(default=None, description="Table classification: fact, dimension, or unknown")
+    filter_columns: list[FilterColumnInfo] | None = Field(
+        default=None,
+        description="Columns identified as suitable for analytical filtering. Present when detect_filter_columns=True.",
+    )
 
 
 class ViewMetadata(BaseModel):

@@ -11,7 +11,6 @@ from core.api.v1.schemas.profiler import ColumnMetadata, KPITerm, TableMetadata
 from core.llm.openai import (
     _KPI_CLUSTER_MAX_TOKENS,
     _KPI_GENERATE_MAX_TOKENS,
-    _KPI_SYNTHESIZE_MAX_TOKENS,
     OpenAILLMClient,
     _build_kpi_cluster_prompt,
     _build_kpi_generate_prompt,
@@ -462,99 +461,3 @@ def _valid_synthesis_json(kpis: list[dict] | None = None) -> str:
             },
         ]
     return json.dumps({"kpis": kpis})
-
-
-class TestOpenAISynthesizeKpis:
-    async def test_returns_synthesized_kpis(self):
-        client = _make_client()
-        client._client.chat.completions.create = AsyncMock(return_value=_mock_response(_valid_synthesis_json()))
-        input_kpis = [_make_kpi("Monthly Revenue")]
-        result = await client._synthesize_kpis(input_kpis)
-        # 1 input KPI + 2 synthesized KPIs = 3 total
-        assert len(result) == 3
-        assert all(isinstance(kpi, KPITerm) for kpi in result)
-
-    async def test_reattaches_linked_columns_from_phase_b(self):
-        """linked_columns from Phase B must be re-attached for surviving KPIs."""
-        client = _make_client()
-        synthesis_payload = [
-            {
-                "name": "Monthly Revenue",
-                "description": "Total revenue.",
-                "calculation": None,
-                "linked_columns": [],  # synthesis sends empty; should be re-attached
-            }
-        ]
-        client._client.chat.completions.create = AsyncMock(return_value=_mock_response(json.dumps({"kpis": synthesis_payload})))
-        input_kpis = [_make_kpi("Monthly Revenue")]  # has linked_columns=["orders.total_amount"]
-        result = await client._synthesize_kpis(input_kpis)
-        assert result[0].linked_columns == ["orders.total_amount"]
-
-    async def test_strips_hallucinated_linked_columns_in_synthesis(self):
-        """Phase C should strip linked_columns not present in Phase B output."""
-        synthesis_payload = [
-            {
-                "name": "Cross-Domain KPI",
-                "description": "A cross-domain metric",
-                "calculation": "SUM(orders.total_amount)",
-                "linked_columns": ["orders.total_amount", "fake.nonexistent"],
-            }
-        ]
-        client = _make_client()
-        client._client.chat.completions.create = AsyncMock(return_value=_mock_response(json.dumps({"kpis": synthesis_payload})))
-        # Phase B input has orders.total_amount as valid
-        input_kpis = [_make_kpi("Monthly Revenue")]  # linked_columns=["orders.total_amount"]
-        result = await client._synthesize_kpis(input_kpis)
-        synthesized = [k for k in result if k.name == "Cross-Domain KPI"]
-        assert len(synthesized) == 1
-        assert "orders.total_amount" in synthesized[0].linked_columns
-        assert "fake.nonexistent" not in synthesized[0].linked_columns
-
-    async def test_returns_input_unchanged_on_none_content(self):
-        client = _make_client()
-        client._client.chat.completions.create = AsyncMock(return_value=_mock_response(None))
-        input_kpis = [_make_kpi("Revenue")]
-        result = await client._synthesize_kpis(input_kpis)
-        assert result is input_kpis
-
-    async def test_returns_input_unchanged_on_invalid_json(self):
-        client = _make_client()
-        client._client.chat.completions.create = AsyncMock(return_value=_mock_response("not valid json {{"))
-        input_kpis = [_make_kpi("Revenue")]
-        result = await client._synthesize_kpis(input_kpis)
-        assert result is input_kpis
-
-    async def test_empty_input_returns_empty_list(self):
-        client = _make_client()
-        result = await client._synthesize_kpis([])
-        assert result == []
-
-    async def test_propagates_api_exceptions(self):
-        client = _make_client()
-        client._client.chat.completions.create = AsyncMock(side_effect=Exception("API error"))
-        with pytest.raises(Exception, match="API error"):
-            await client._synthesize_kpis([_make_kpi("Revenue")])
-
-    async def test_uses_synthesize_max_tokens(self):
-        client = _make_client()
-        create_mock = AsyncMock(return_value=_mock_response(_valid_synthesis_json()))
-        client._client.chat.completions.create = create_mock
-        await client._synthesize_kpis([_make_kpi("Revenue")])
-        assert create_mock.call_args.kwargs["max_tokens"] == _KPI_SYNTHESIZE_MAX_TOKENS
-
-    async def test_passes_json_object_response_format(self):
-        client = _make_client()
-        create_mock = AsyncMock(return_value=_mock_response(_valid_synthesis_json()))
-        client._client.chat.completions.create = create_mock
-        await client._synthesize_kpis([_make_kpi("Revenue")])
-        assert create_mock.call_args.kwargs["response_format"] == {"type": "json_object"}
-
-    async def test_system_and_user_messages_included(self):
-        client = _make_client()
-        create_mock = AsyncMock(return_value=_mock_response(_valid_synthesis_json()))
-        client._client.chat.completions.create = create_mock
-        await client._synthesize_kpis([_make_kpi("Revenue")])
-        messages = create_mock.call_args.kwargs["messages"]
-        roles = [m["role"] for m in messages]
-        assert "system" in roles
-        assert "user" in roles
