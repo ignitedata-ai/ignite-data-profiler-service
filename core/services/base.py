@@ -169,52 +169,6 @@ class BaseProfilerService(ABC):
                     )
                     response = self._assemble_response(raw, profiled_at)
 
-                    # ── Post-processing (connector still open) ────────────
-
-                    if cfg.augment_descriptions:
-                        if progress:
-                            progress.update(phase="augmenting", percent=70, detail={"augmentation_step": "table_descriptions"})
-                            await progress.flush()
-                        response = await self._augment_response(response, cfg)
-        # Reset per-task LLM cost accumulator before any augmentation calls.
-        from core.utils.llm_config import reset_cost_accumulator, get_accumulated_cost, get_accumulated_stats
-        reset_cost_accumulator()
-
-        def _phase_log(event: str) -> None:
-            s = get_accumulated_stats()
-            logger.info(
-                event,
-                input_tokens=int(s["input_tokens"]),
-                output_tokens=int(s["output_tokens"]),
-                input_cost_usd=round(s["input_cost"], 8),
-                output_cost_usd=round(s["output_cost"], 8),
-                total_cost_usd=round(s["total_cost"], 8),
-            )
-
-        if cfg.augment_descriptions:
-            if progress:
-                progress.update(phase="augmenting", percent=70, detail={"augmentation_step": "table_descriptions"})
-                await progress.flush()
-            response = await self._augment_response(response, cfg)
-
-                    if cfg.augment_column_descriptions:
-                        if progress:
-                            progress.update(phase="augmenting", percent=80, detail={"augmentation_step": "column_descriptions"})
-                            await progress.flush()
-                        response = await self._augment_column_response(response, cfg)
-
-                    if cfg.augment_glossary:
-                        if progress:
-                            progress.update(phase="augmenting", percent=85, detail={"augmentation_step": "glossary"})
-                            await progress.flush()
-                        response = await self._augment_glossary_response(response, cfg)
-
-                    if cfg.infer_kpis:
-                        if progress:
-                            progress.update(phase="augmenting", percent=90, detail={"augmentation_step": "kpis"})
-                            await progress.flush()
-                        response = await self._augment_kpis_response(response, cfg)
-
                     if cfg.detect_filter_columns:
                         if progress:
                             progress.update(phase="detecting_filters", percent=93, detail={"augmentation_step": "filter_columns"})
@@ -243,6 +197,49 @@ class BaseProfilerService(ABC):
                     exc_info=True,
                 )
                 raise self._map_error(exc, ctx) from exc
+
+        # Reset per-task LLM cost accumulator before any augmentation calls.
+        from core.utils.llm_config import reset_cost_accumulator, get_accumulated_cost, get_accumulated_stats
+        reset_cost_accumulator()
+
+        def _phase_log(event: str) -> None:
+            s = get_accumulated_stats()
+            logger.info(
+                event,
+                input_tokens=int(s["input_tokens"]),
+                output_tokens=int(s["output_tokens"]),
+                input_cost_usd=round(s["input_cost"], 8),
+                output_cost_usd=round(s["output_cost"], 8),
+                total_cost_usd=round(s["total_cost"], 8),
+            )
+
+        if cfg.augment_descriptions:
+            if progress:
+                progress.update(phase="augmenting", percent=70, detail={"augmentation_step": "table_descriptions"})
+                await progress.flush()
+            response = await self._augment_response(response, cfg)
+            _phase_log("LLM cost after table descriptions")
+
+        if cfg.augment_column_descriptions:
+            if progress:
+                progress.update(phase="augmenting", percent=80, detail={"augmentation_step": "column_descriptions"})
+                await progress.flush()
+            response = await self._augment_column_response(response, cfg)
+            _phase_log("LLM cost after column descriptions")
+
+        if cfg.augment_glossary:
+            if progress:
+                progress.update(phase="augmenting", percent=85, detail={"augmentation_step": "glossary"})
+                await progress.flush()
+            response = await self._augment_glossary_response(response, cfg)
+            _phase_log("LLM cost after glossary inference")
+
+        if cfg.infer_kpis:
+            if progress:
+                progress.update(phase="augmenting", percent=90, detail={"augmentation_step": "kpis"})
+                await progress.flush()
+            response = await self._augment_kpis_response(response, cfg)
+            _phase_log("LLM cost after KPI inference")
 
         if progress:
             progress.update(phase="completed", percent=100)
