@@ -121,6 +121,22 @@ class ProfilingConfig(BaseModel):
         description="String columns with distinct_count above this threshold will not have top_values computed",
     )
 
+    # ── Per-request LLM credentials (optional) ────────────────────────────────
+    portkey_api_key: str | None = Field(
+        default=None,
+        description=(
+            "Portkey API key for this request. When provided, overrides the server-side "
+            "PORTKEY_API_KEY env var. Falls back to server env when null."
+        ),
+    )
+    portkey_virtual_key: str | None = Field(
+        default=None,
+        description=(
+            "Portkey virtual key (LLM routing key) for this request. When provided, overrides the "
+            "server-side PORTKEY_VIRTUAL_KEY env var. Falls back to server env when null."
+        ),
+    )
+
 
 class PostgresProfilingRequest(BaseModel):
     """Profiling request targeting a PostgreSQL database."""
@@ -375,6 +391,33 @@ class DatabaseMetadata(BaseModel):
     size_bytes: int
 
 
+class LLMUsageStats(BaseModel):
+    """Aggregated LLM token usage and cost for a profiling run."""
+
+    model_config = ConfigDict(frozen=True)
+
+    input_tokens: int = Field(description="Total prompt/input tokens consumed across all LLM calls (from API response).")
+    output_tokens: int = Field(description="Total completion/output tokens generated across all LLM calls (from API response).")
+    input_cost: float = Field(description="USD cost attributable to input tokens.")
+    output_cost: float = Field(description="USD cost attributable to output tokens.")
+    total_cost: float = Field(description="Total USD cost (input + output).")
+    estimated_text_tokens: int = Field(
+        description="Pre-call estimated text token count (tiktoken) — content only, excluding message format overhead."
+    )
+    estimated_overhead_tokens: int = Field(
+        description="Token overhead added by the chat message format (role markers, separators)."
+    )
+    estimated_total_tokens: int = Field(
+        description="Pre-call estimated total tokens (text + overhead) across all LLM calls."
+    )
+    estimated_message_count: int = Field(
+        description="Total number of messages (system + user) sent across all LLM calls."
+    )
+    total_latency_ms: float = Field(
+        description="Total wall-clock latency in milliseconds across all LLM API calls."
+    )
+
+
 class ProfilingResponse(BaseModel):
     """Top-level profiling response."""
 
@@ -382,3 +425,11 @@ class ProfilingResponse(BaseModel):
     database: DatabaseMetadata
     schemas: list[SchemaMetadata]
     kpis: list[KPITerm] | None = None
+    llm_usage: LLMUsageStats | None = Field(
+        default=None,
+        description=(
+            "Aggregated LLM token usage and cost for this profiling run "
+            "(table descriptions, column descriptions, glossary, KPI inference). "
+            "None when LLM augmentation was disabled or cost tracking is unavailable."
+        ),
+    )

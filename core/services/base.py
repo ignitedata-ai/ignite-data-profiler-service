@@ -169,33 +169,82 @@ class BaseProfilerService(ABC):
         )
         response = self._assemble_response(raw, profiled_at)
 
+        # Reset per-task LLM cost accumulator before any augmentation calls.
+        from core.utils.llm_config import reset_cost_accumulator, get_accumulated_cost, get_accumulated_stats
+        reset_cost_accumulator()
+
+        def _phase_log(event: str) -> None:
+            s = get_accumulated_stats()
+            logger.info(
+                event,
+                input_tokens=int(s["input_tokens"]),
+                output_tokens=int(s["output_tokens"]),
+                input_cost_usd=round(s["input_cost"], 8),
+                output_cost_usd=round(s["output_cost"], 8),
+                total_cost_usd=round(s["total_cost"], 8),
+            )
+
         if cfg.augment_descriptions:
             if progress:
                 progress.update(phase="augmenting", percent=70, detail={"augmentation_step": "table_descriptions"})
                 await progress.flush()
             response = await self._augment_response(response, cfg)
+            _phase_log("LLM cost after table descriptions")
 
         if cfg.augment_column_descriptions:
             if progress:
                 progress.update(phase="augmenting", percent=80, detail={"augmentation_step": "column_descriptions"})
                 await progress.flush()
             response = await self._augment_column_response(response, cfg)
+            _phase_log("LLM cost after column descriptions")
 
         if cfg.augment_glossary:
             if progress:
                 progress.update(phase="augmenting", percent=85, detail={"augmentation_step": "glossary"})
                 await progress.flush()
             response = await self._augment_glossary_response(response, cfg)
+            _phase_log("LLM cost after glossary inference")
 
         if cfg.infer_kpis:
             if progress:
                 progress.update(phase="augmenting", percent=90, detail={"augmentation_step": "kpis"})
                 await progress.flush()
             response = await self._augment_kpis_response(response, cfg)
+            _phase_log("LLM cost after KPI inference")
 
         if progress:
             progress.update(phase="completed", percent=100)
             await progress.flush()
+
+        # Attach aggregated LLM usage stats for the caller service.
+        from core.api.v1.schemas.profiler import LLMUsageStats
+        stats = get_accumulated_stats()
+        if stats["total_cost"] > 0 or stats["estimated_total_tokens"] > 0 or stats["total_latency_ms"] > 0:
+            response.llm_usage = LLMUsageStats(
+                input_tokens=int(stats["input_tokens"]),
+                output_tokens=int(stats["output_tokens"]),
+                input_cost=round(stats["input_cost"], 8),
+                output_cost=round(stats["output_cost"], 8),
+                total_cost=round(stats["total_cost"], 8),
+                estimated_text_tokens=int(stats["estimated_text_tokens"]),
+                estimated_overhead_tokens=int(stats["estimated_overhead_tokens"]),
+                estimated_total_tokens=int(stats["estimated_total_tokens"]),
+                estimated_message_count=int(stats["estimated_message_count"]),
+                total_latency_ms=round(stats["total_latency_ms"], 2),
+            )
+            logger.info(
+                "Total LLM cost for profiling run",
+                input_tokens=int(stats["input_tokens"]),
+                output_tokens=int(stats["output_tokens"]),
+                input_cost_usd=round(stats["input_cost"], 8),
+                output_cost_usd=round(stats["output_cost"], 8),
+                total_cost_usd=round(stats["total_cost"], 8),
+                estimated_text_tokens=int(stats["estimated_text_tokens"]),
+                estimated_overhead_tokens=int(stats["estimated_overhead_tokens"]),
+                estimated_total_tokens=int(stats["estimated_total_tokens"]),
+                estimated_message_count=int(stats["estimated_message_count"]),
+                total_latency_ms=round(stats["total_latency_ms"], 2),
+            )
 
         return response
 
@@ -212,7 +261,10 @@ class BaseProfilerService(ABC):
         """
         from core.llm import get_llm_client
 
-        llm = get_llm_client()
+        llm = get_llm_client(
+            portkey_api_key=cfg.portkey_api_key,
+            portkey_virtual_key=cfg.portkey_virtual_key,
+        )
         if llm is None:
             logger.info("augment_descriptions=True but no LLM client is configured; skipping")
             return response
@@ -260,7 +312,10 @@ class BaseProfilerService(ABC):
         """
         from core.llm import get_llm_client
 
-        llm = get_llm_client()
+        llm = get_llm_client(
+            portkey_api_key=cfg.portkey_api_key,
+            portkey_virtual_key=cfg.portkey_virtual_key,
+        )
         if llm is None:
             logger.info("augment_column_descriptions=True but no LLM client is configured; skipping")
             return response
@@ -308,7 +363,10 @@ class BaseProfilerService(ABC):
         """
         from core.llm import get_llm_client
 
-        llm = get_llm_client()
+        llm = get_llm_client(
+            portkey_api_key=cfg.portkey_api_key,
+            portkey_virtual_key=cfg.portkey_virtual_key,
+        )
         if llm is None:
             logger.info("augment_glossary=True but no LLM client is configured; skipping")
             return response
@@ -356,7 +414,10 @@ class BaseProfilerService(ABC):
         """
         from core.llm import get_llm_client
 
-        llm = get_llm_client()
+        llm = get_llm_client(
+            portkey_api_key=cfg.portkey_api_key,
+            portkey_virtual_key=cfg.portkey_virtual_key,
+        )
         if llm is None:
             logger.info("infer_kpis=True but no LLM client is configured; skipping")
             return response
