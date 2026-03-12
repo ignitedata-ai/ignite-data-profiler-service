@@ -43,9 +43,24 @@ dependencies = [
     "slowapi>=0.1.9",
     "redis>=7.2.0",
     "openai>=1.50.0",
+    "portkey-ai>=1.0.0",
     "duckdb>=1.4.4",
     "ignite-data-connectors",
+    "ignite-llmops-lib-cost-tracker==0.1.0",
+    "ignite-llmops-lib-token-counter==0.1.0",
+    "ignite-llmops-lib-latency-tracker==0.1.0",
 ]
+
+[[tool.uv.index]]
+name = "codeartifact"
+url = "https://aws-ilens-dev-716695577700.d.codeartifact.us-east-1.amazonaws.com/pypi/aws-ilens-dev-repo/simple"
+explicit = true
+
+[tool.uv.sources]
+ignite-data-connectors = { path = "libs/ignite_data_connectors-0.3.0-py3-none-any.whl" }
+ignite-llmops-lib-cost-tracker = { index = "codeartifact" }
+ignite-llmops-lib-token-counter = { index = "codeartifact" }
+ignite-llmops-lib-latency-tracker = { index = "codeartifact" }
 
 [dependency-groups]
 dev = [
@@ -247,5 +262,3 @@ reportPossiblyUnboundVariable = "error"
 
 reportDeprecated = "warning"
 
-[tool.uv.sources]
-ignite-data-connectors = { path = "libs/ignite_data_connectors-0.3.0-py3-none-any.whl" }

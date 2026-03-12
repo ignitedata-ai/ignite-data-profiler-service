@@ -214,7 +214,12 @@ class TestDeriveTableName:
 
 class TestS3ConnectionConfigSchema:
     def test_all_optional_for_iam_role(self):
-        cfg = S3ConnectionConfig()
+        # Explicitly pass None to override defaults (Field defaults are baked in at class definition)
+        cfg = S3ConnectionConfig(
+            aws_access_key_id=None,
+            aws_secret_access_key=None,
+            aws_session_token=None,
+        )
         assert cfg.aws_access_key_id is None
         assert cfg.aws_secret_access_key is None
         assert cfg.aws_session_token is None
@@ -369,8 +374,14 @@ class TestS3FileProfilerServiceMetadata:
         assert attrs["s3.endpoint"] == "http://minio:9000"
 
     def test_log_context_default(self):
+        # Explicitly pass None to override defaults (Field defaults are baked in at class definition)
         svc = S3FileProfilerService()
-        conn = _make_conn(aws_region="ap-southeast-1")
+        conn = _make_conn(
+            aws_region="ap-southeast-1",
+            aws_access_key_id=None,
+            aws_secret_access_key=None,
+            aws_session_token=None,
+        )
         ctx = svc._log_context(conn)
         assert "ap-southeast-1" in ctx["host"]
         assert ctx["database"] == "s3_file"

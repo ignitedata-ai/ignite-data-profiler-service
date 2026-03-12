@@ -83,7 +83,6 @@ class TestFilterTypeClassification:
         assert c.preliminary_filter_type == "range"
 
 
-
 class TestTriage:
     def test_auto_accept_high_score_with_schema(self):
         c = _make_candidate(schema_score=0.95, cardinality_score=0.95, dtype_score=0.90, naming_score=0.85)

@@ -186,15 +186,21 @@ class TestGlobalSessionManager:
 
     def test_initialize_database(self):
         """Test global database initialization."""
-        with patch("core.database.session.settings") as mock_settings:
-            mock_settings.DATABASE_URL = "sqlite+aiosqlite:///:memory:"
-            mock_settings.DATABASE_ECHO = True
+        import core.database.session
 
-            manager = initialize_database()
+        original_manager = core.database.session.session_manager
+        try:
+            with patch("core.database.session.settings") as mock_settings:
+                mock_settings.DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+                mock_settings.DATABASE_ECHO = True
 
-            assert isinstance(manager, DatabaseSessionManager)
-            assert manager._database_url == "sqlite+aiosqlite:///:memory:"
-            assert manager._echo is True
+                manager = initialize_database()
+
+                assert isinstance(manager, DatabaseSessionManager)
+                assert manager._database_url == "sqlite+aiosqlite:///:memory:"
+                assert manager._echo is True
+        finally:
+            core.database.session.session_manager = original_manager
 
     def test_get_session_manager_before_initialization(self):
         """Test getting session manager before initialization."""
@@ -213,17 +219,23 @@ class TestGlobalSessionManager:
 
     def test_get_session_manager_after_initialization(self):
         """Test getting session manager after initialization."""
-        with patch("core.database.session.settings") as mock_settings:
-            mock_settings.DATABASE_URL = "sqlite+aiosqlite:///:memory:"
-            mock_settings.DATABASE_ECHO = False
+        import core.database.session
 
-            # Initialize global manager
-            manager = initialize_database()
+        original_manager = core.database.session.session_manager
+        try:
+            with patch("core.database.session.settings") as mock_settings:
+                mock_settings.DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+                mock_settings.DATABASE_ECHO = False
 
-            # Get manager
-            retrieved_manager = get_session_manager()
+                # Initialize global manager
+                manager = initialize_database()
 
-            assert retrieved_manager is manager
+                # Get manager
+                retrieved_manager = get_session_manager()
+
+                assert retrieved_manager is manager
+        finally:
+            core.database.session.session_manager = original_manager
 
 
 @pytest.mark.integration

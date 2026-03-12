@@ -87,6 +87,11 @@ def mock_public_key(rsa_keypair, tmp_path):
 @pytest.fixture
 def app_with_auth():
     """Create a minimal FastAPI app with JWTAuthMiddleware."""
+    from core.config import settings as _settings
+
+    _orig = _settings.JWT_AUTH_ENABLED
+    object.__setattr__(_settings, "JWT_AUTH_ENABLED", True)
+
     app = FastAPI()
     app.add_middleware(JWTAuthMiddleware)
 
@@ -103,7 +108,9 @@ def app_with_auth():
         user = getattr(request.state, "user", None)
         return {"user": user}
 
-    return app
+    yield app
+
+    object.__setattr__(_settings, "JWT_AUTH_ENABLED", _orig)
 
 
 # ── Unit tests for core.security.jwt ──────────────────────────────────────────

@@ -1,0 +1,82 @@
+name: Run Tests on Feature Branches
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+  pull_request:
+    branches:
+      - 'main'
+      - 'development'
+      - 'demo'
+
+permissions:
+  id-token: write   # Required for OIDC
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials via OIDC
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::716695577700:role/aws-ilens-globals-github-actions-role
+        aws-region: us-east-1
+
+    - name: Get CodeArtifact token
+      run: |
+        TOKEN=$(aws codeartifact get-authorization-token \
+          --domain aws-ilens-dev \
+          --domain-owner 716695577700 \
+          --region us-east-1 \
+          --query authorizationToken \
+          --output text)
+        echo "UV_INDEX_CODEARTIFACT_USERNAME=aws" >> $GITHUB_ENV
+        echo "UV_INDEX_CODEARTIFACT_PASSWORD=$TOKEN" >> $GITHUB_ENV
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
+
+    - name: Install dependencies
+      run: |
+        uv sync --all-extras --dev
+
+    - name: Check code formatting with ruff
+      run: |
+        uv run ruff format --check .
+
+    - name: Run linting with ruff
+      run: |
+        uv run ruff check .
+      continue-on-error: true
+
+    - name: Run tests with pytest
+      run: |
+        uv run pytest tests/ -v --cov=core --cov=api --cov-report=term-missing --cov-report=html --cov-fail-under=60
+
+    - name: Upload coverage report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: htmlcov/
+        retention-days: 7
+
+    - name: Test summary
+      if: always()
+      run: |
+        echo "### Test Results :rocket:" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Tests completed. Check the logs for details." >> $GITHUB_STEP_SUMMARY

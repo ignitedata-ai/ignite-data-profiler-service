@@ -92,6 +92,39 @@ async def lifespan(app: FastAPI):
             logger.error("Failed to initialize task manager", error=str(e))
             raise
 
+        # Initialize LLM cost tracker (best-effort — pricing is fetched from LiteLLM)
+        try:
+            from core.services.cost_tracking import init_cost_tracker
+
+            await init_cost_tracker()
+        except Exception as e:
+            logger.warning(
+                "LLM cost tracker failed to initialize — profiling will continue without cost tracking",
+                error=str(e),
+            )
+
+        # Initialize LLM token counter (best-effort — uses tiktoken)
+        try:
+            from core.services.token_tracking import init_token_counter
+
+            init_token_counter()
+        except Exception as e:
+            logger.warning(
+                "LLM token counter failed to initialize — profiling will continue without token estimation",
+                error=str(e),
+            )
+
+        # Initialize LLM latency tracker (best-effort — in-memory only)
+        try:
+            from core.services.latency_tracking import init_latency_tracker
+
+            init_latency_tracker()
+        except Exception as e:
+            logger.warning(
+                "LLM latency tracker failed to initialize — profiling will continue without latency tracking",
+                error=str(e),
+            )
+
         logger.info("Application startup completed")
         yield
 

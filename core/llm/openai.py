@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 
-from openai import AsyncOpenAI
+from portkey_ai import AsyncPortkey
 from pydantic import TypeAdapter
 
 from core.api.v1.schemas.profiler import ColumnMetadata, GlossaryTerm, KPITerm, TableMetadata
 from core.config import settings
 from core.llm.base import BaseLLMClient
 from core.logging import get_logger
+from core.utils.llm_config import get_llm_response
 
 logger = get_logger(__name__)
 
@@ -346,14 +347,13 @@ Respond ONLY with valid JSON in exactly this format (no markdown, no preamble):
 
 
 class OpenAILLMClient(BaseLLMClient):
-    """LLM client backed by OpenAI's Chat Completions API (async).
+    """LLM client backed by OpenAI via the Portkey gateway (async).
 
     Args:
-        api_key: OpenAI API key.  Defaults to ``settings.LLM_OPENAI_API_KEY``.
         model: Model ID.  Defaults to ``settings.LLM_MODEL``.
         temperature: Sampling temperature.  Defaults to ``settings.LLM_TEMPERATURE``.
         max_tokens: Response length cap.  Defaults to ``settings.LLM_MAX_TOKENS``.
-        timeout: Per-call timeout in seconds.  Defaults to ``settings.LLM_REQUEST_TIMEOUT_SECONDS``.
+        timeout: Unused — Portkey manages timeouts via the gateway.
 
     """
 
@@ -361,15 +361,16 @@ class OpenAILLMClient(BaseLLMClient):
 
     def __init__(
         self,
-        api_key: str | None = None,
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
         timeout: float | None = None,
+        portkey_api_key: str | None = None,
+        portkey_virtual_key: str | None = None,
     ) -> None:
-        self._client = AsyncOpenAI(
-            api_key=api_key or settings.LLM_OPENAI_API_KEY,
-            timeout=timeout or settings.LLM_REQUEST_TIMEOUT_SECONDS,
+        self._client = AsyncPortkey(
+            api_key=portkey_api_key or settings.PORTKEY_API_KEY,
+            virtual_key=portkey_virtual_key or settings.PORTKEY_VIRTUAL_KEY,
         )
         self._model = model or settings.LLM_MODEL
         self._temperature = temperature if temperature is not None else settings.LLM_TEMPERATURE
@@ -385,23 +386,18 @@ class OpenAILLMClient(BaseLLMClient):
             table=f"{table.schema_name}.{table.name}",
         )
 
-        response = await self._client.chat.completions.create(
+        raw = await get_llm_response(
+            self._client,
+            system_prompt=(
+                "You are a concise technical writer specialising in data "
+                "catalog documentation. Always respond with plain text only."
+            ),
+            user_prompt=prompt,
             model=self._model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a concise technical writer specialising in data "
-                        "catalog documentation. Always respond with plain text only."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
+            provider=self.provider_name,
             temperature=self._temperature,
             max_tokens=self._max_tokens,
         )
-
-        raw = response.choices[0].message.content
         if raw:
             description = raw.strip()
             logger.debug(
@@ -424,23 +420,18 @@ class OpenAILLMClient(BaseLLMClient):
             column=column.name,
         )
 
-        response = await self._client.chat.completions.create(
+        raw = await get_llm_response(
+            self._client,
+            system_prompt=(
+                "You are a concise technical writer specialising in data "
+                "catalog documentation. Always respond with plain text only."
+            ),
+            user_prompt=prompt,
             model=self._model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a concise technical writer specialising in data "
-                        "catalog documentation. Always respond with plain text only."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
+            provider=self.provider_name,
             temperature=self._temperature,
             max_tokens=self._max_tokens,
         )
-
-        raw = response.choices[0].message.content
         if raw:
             description = raw.strip()
             logger.debug(
@@ -463,24 +454,19 @@ class OpenAILLMClient(BaseLLMClient):
             table=f"{table.schema_name}.{table.name}",
         )
 
-        response = await self._client.chat.completions.create(
+        raw = await get_llm_response(
+            self._client,
+            system_prompt=(
+                "You are a business analyst specialising in data governance and "
+                "enterprise data catalogs. Always respond with valid JSON only."
+            ),
+            user_prompt=prompt,
             model=self._model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a business analyst specialising in data governance and "
-                        "enterprise data catalogs. Always respond with valid JSON only."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
+            provider=self.provider_name,
             temperature=self._temperature,
             max_tokens=_GLOSSARY_MAX_TOKENS,
             response_format={"type": "json_object"},
         )
-
-        raw = response.choices[0].message.content
         if not raw:
             return []
 
@@ -582,23 +568,18 @@ class OpenAILLMClient(BaseLLMClient):
             max_domains=max_domains,
         )
 
-        response = await self._client.chat.completions.create(
+        raw = await get_llm_response(
+            self._client,
+            system_prompt=(
+                "You are a data architect specialising in business domain modelling. Always respond with valid JSON only."
+            ),
+            user_prompt=prompt,
             model=self._model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a data architect specialising in business domain modelling. Always respond with valid JSON only."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
+            provider=self.provider_name,
             temperature=self._temperature,
             max_tokens=_KPI_CLUSTER_MAX_TOKENS,
             response_format={"type": "json_object"},
         )
-
-        raw = response.choices[0].message.content
         if not raw:
             return {}
 
@@ -642,23 +623,18 @@ class OpenAILLMClient(BaseLLMClient):
             table_count=len(domain_tables),
         )
 
-        response = await self._client.chat.completions.create(
+        raw = await get_llm_response(
+            self._client,
+            system_prompt=(
+                "You are a business intelligence analyst specialising in KPI design. Always respond with valid JSON only."
+            ),
+            user_prompt=prompt,
             model=self._model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a business intelligence analyst specialising in KPI design. Always respond with valid JSON only."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
+            provider=self.provider_name,
             temperature=self._temperature,
             max_tokens=_KPI_GENERATE_MAX_TOKENS,
             response_format={"type": "json_object"},
         )
-
-        raw = response.choices[0].message.content
         if not raw:
             return []
 

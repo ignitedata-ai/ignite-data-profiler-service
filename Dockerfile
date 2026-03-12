@@ -20,10 +20,15 @@ RUN pip install uv
 
 WORKDIR /app
 
+# Accept AWS CodeArtifact token for installing private packages
+ARG AWS_CODEARTIFACT_TOKEN
+
 # Install dependencies first (cached layer)
 COPY pyproject.toml uv.lock ./
 COPY libs/ libs/
-RUN uv sync --frozen --no-cache --no-dev --no-editable
+RUN UV_INDEX_CODEARTIFACT_USERNAME=aws \
+    UV_INDEX_CODEARTIFACT_PASSWORD=${AWS_CODEARTIFACT_TOKEN} \
+    uv sync --frozen --no-cache --no-dev --no-editable
 
 # ---------- production stage ----------
 FROM python:3.12-slim AS production

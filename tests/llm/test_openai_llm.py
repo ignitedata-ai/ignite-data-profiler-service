@@ -65,8 +65,8 @@ def _make_table() -> TableMetadata:
 
 
 def _make_client() -> OpenAILLMClient:
-    with patch("core.llm.openai.AsyncOpenAI"):
-        return OpenAILLMClient(api_key="sk-test", model="gpt-4o-mini")
+    with patch("core.llm.openai.AsyncPortkey"):
+        return OpenAILLMClient(model="gpt-4o-mini")
 
 
 # ── Prompt building ────────────────────────────────────────────────────────────
