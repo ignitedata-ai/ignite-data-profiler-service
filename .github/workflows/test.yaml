@@ -11,14 +11,12 @@ on:
       - 'demo'
 
 permissions:
-  contents: read  # minimum at workflow level
+  id-token: write   # Required for OIDC
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write   # Required for OIDC — must be at job level
-      contents: read
 
     steps:
     - name: Checkout code
