@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncGenerator, Generator
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -63,8 +64,9 @@ def app():
 @pytest.fixture(scope="session")
 def client(app) -> Generator[TestClient, None, None]:
     """Create test client."""
-    with TestClient(app) as test_client:
-        yield test_client
+    with patch("core.services.task_manager.task_manager.startup", new_callable=AsyncMock):
+        with TestClient(app) as test_client:
+            yield test_client
 
 
 @pytest_asyncio.fixture(scope="session")
