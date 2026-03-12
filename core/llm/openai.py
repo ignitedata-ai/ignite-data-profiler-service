@@ -575,15 +575,7 @@ class OpenAILLMClient(BaseLLMClient):
             ),
             user_prompt=prompt,
             model=self._model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a data architect specialising in business domain modelling. Always respond with valid JSON only."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
+            provider=self.provider_name,
             temperature=self._temperature,
             max_tokens=_KPI_CLUSTER_MAX_TOKENS,
             response_format={"type": "json_object"},
