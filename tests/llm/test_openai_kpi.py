@@ -14,7 +14,6 @@ from core.llm.openai import (
     OpenAILLMClient,
     _build_kpi_cluster_prompt,
     _build_kpi_generate_prompt,
-    _build_kpi_synthesize_prompt,
     _build_valid_columns_reference,
     _strip_invalid_linked_columns,
 )
@@ -231,44 +230,6 @@ class TestBuildKpiGeneratePrompt:
         tables = [_make_table("orders")]
         prompt = _build_kpi_generate_prompt("Finance", tables, max_kpis=5)
         assert "fewer" in prompt.lower()
-
-
-# ── Phase C prompt building ────────────────────────────────────────────────────
-
-
-class TestBuildKpiSynthesizePrompt:
-    def test_prompt_includes_all_kpi_names(self):
-        kpis = [_make_kpi("Monthly Revenue"), _make_kpi("Churn Rate")]
-        prompt = _build_kpi_synthesize_prompt(kpis)
-        assert "Monthly Revenue" in prompt
-        assert "Churn Rate" in prompt
-
-    def test_prompt_requests_json_format(self):
-        kpis = [_make_kpi("Revenue")]
-        prompt = _build_kpi_synthesize_prompt(kpis)
-        assert "kpis" in prompt
-        assert "json" in prompt.lower() or "JSON" in prompt
-
-    def test_prompt_requests_new_cross_domain_kpis(self):
-        kpis = [_make_kpi("Revenue")]
-        prompt = _build_kpi_synthesize_prompt(kpis)
-        assert "cross-domain" in prompt.lower() or "NEW" in prompt
-
-    def test_prompt_requests_calculation_and_linked_columns(self):
-        kpis = [_make_kpi("Revenue")]
-        prompt = _build_kpi_synthesize_prompt(kpis)
-        assert "calculation" in prompt
-        assert "linked_columns" in prompt
-
-    def test_prompt_discourages_trivial_metrics(self):
-        kpis = [_make_kpi("Revenue")]
-        prompt = _build_kpi_synthesize_prompt(kpis)
-        assert "trivial" in prompt.lower() or "COUNT(*)" in prompt
-
-    def test_prompt_requires_dashboard_ready(self):
-        kpis = [_make_kpi("Revenue")]
-        prompt = _build_kpi_synthesize_prompt(kpis)
-        assert "dashboard" in prompt.lower()
 
 
 # ── OpenAILLMClient._cluster_tables_into_domains ──────────────────────────────
