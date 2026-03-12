@@ -214,11 +214,11 @@ class TestDeriveTableName:
 
 class TestS3ConnectionConfigSchema:
     def test_all_optional_for_iam_role(self, monkeypatch):
-        # Clear AWS env vars so config does not pick up CI credentials
-        monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
-        monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
-        monkeypatch.delenv("AWS_SESSION_TOKEN", raising=False)
-        monkeypatch.delenv("AWS_REGION", raising=False)
+        # Patch settings to None so config uses IAM role credentials
+        from core.config import settings
+        monkeypatch.setattr(settings, "AWS_ACCESS_KEY_ID", None)
+        monkeypatch.setattr(settings, "AWS_SECRET_ACCESS_KEY", None)
+        monkeypatch.setattr(settings, "AWS_SESSION_TOKEN", None)
         cfg = S3ConnectionConfig()
         assert cfg.aws_access_key_id is None
         assert cfg.aws_secret_access_key is None
@@ -374,11 +374,11 @@ class TestS3FileProfilerServiceMetadata:
         assert attrs["s3.endpoint"] == "http://minio:9000"
 
     def test_log_context_default(self, monkeypatch):
-        # Clear AWS env vars so config does not pick up CI credentials
-        monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
-        monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
-        monkeypatch.delenv("AWS_SESSION_TOKEN", raising=False)
-        monkeypatch.delenv("AWS_REGION", raising=False)
+        # Patch settings to None so config uses IAM role credentials
+        from core.config import settings
+        monkeypatch.setattr(settings, "AWS_ACCESS_KEY_ID", None)
+        monkeypatch.setattr(settings, "AWS_SECRET_ACCESS_KEY", None)
+        monkeypatch.setattr(settings, "AWS_SESSION_TOKEN", None)
         svc = S3FileProfilerService()
         conn = _make_conn(aws_region="ap-southeast-1")
         ctx = svc._log_context(conn)
