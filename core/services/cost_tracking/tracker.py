@@ -7,7 +7,7 @@ LiteLLM on first use and cached locally.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from core.config import settings
 from core.logging import get_logger
@@ -28,10 +28,10 @@ except ImportError:
     _lib_available = False
     logger.warning("ignite-llmops-lib-cost-tracker not installed — cost tracking disabled")
 
-_cost_tracker: Optional["LLMCostTracker"] = None
+_cost_tracker: LLMCostTracker | None = None
 
 
-async def init_cost_tracker() -> "LLMCostTracker | None":
+async def init_cost_tracker() -> LLMCostTracker | None:
     """Initialize the global cost tracker.
 
     Uses the profiler's own SQLite database for the underlying engine
@@ -76,7 +76,7 @@ async def init_cost_tracker() -> "LLMCostTracker | None":
         raise
 
 
-def get_cost_tracker() -> "LLMCostTracker | None":
+def get_cost_tracker() -> LLMCostTracker | None:
     """Return the global cost tracker, or None if not yet initialised."""
     if _cost_tracker is None:
         logger.debug("Cost tracker accessed before initialization")

@@ -60,7 +60,7 @@ def _make_kpi(name: str) -> KPITerm:
 
 def _make_client() -> OpenAILLMClient:
     with patch("core.llm.openai.AsyncPortkey"):
-        return OpenAILLMClient(api_key="sk-test", model="gpt-4o-mini")
+        return OpenAILLMClient(model="gpt-4o-mini")
 
 
 def _mock_response(content: str | None) -> MagicMock:

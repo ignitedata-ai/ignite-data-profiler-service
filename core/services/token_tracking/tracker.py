@@ -17,7 +17,11 @@ _token_counter: Any | None = None
 _token_counting_available = False
 
 try:
-    from ignite_llmops_lib.token_counter import LLMMessage, LLMMessageRole, init_llm_counter  # type: ignore[import-untyped]  # noqa: F401
+    from ignite_llmops_lib.token_counter import (  # type: ignore[import-untyped]  # noqa: F401
+        LLMMessage,
+        LLMMessageRole,
+        init_llm_counter,
+    )
 
     _token_counting_available = True
 except ImportError:

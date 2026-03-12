@@ -51,10 +51,20 @@ _ACCUMULATOR_ZERO: dict[str, float] = {
     "estimated_message_count": 0.0,
     "total_latency_ms": 0.0,
 }
-_llm_cost_accumulator: ContextVar[dict[str, float]] = ContextVar(
+_llm_cost_accumulator: ContextVar[dict[str, float] | None] = ContextVar(
     "_llm_cost_accumulator",
-    default=dict(_ACCUMULATOR_ZERO),
+    default=None,
 )
+
+
+def _get_accumulator() -> dict[str, float]:
+    """Return the current accumulator, initialising it if not yet set in this context."""
+    acc = _llm_cost_accumulator.get()
+    if acc is None:
+        acc = dict(_ACCUMULATOR_ZERO)
+        _llm_cost_accumulator.set(acc)
+    return acc
+
 
 # Attempt to import cost tracking types (graceful degradation if unavailable)
 try:
@@ -105,7 +115,7 @@ def reset_cost_accumulator() -> None:
 
 def get_accumulated_cost() -> float:
     """Return the total USD cost accumulated in the current async task."""
-    return _llm_cost_accumulator.get()["total_cost"]
+    return _get_accumulator()["total_cost"]
 
 
 def get_accumulated_stats() -> dict[str, float]:
@@ -114,7 +124,7 @@ def get_accumulated_stats() -> dict[str, float]:
     Keys: ``input_tokens``, ``output_tokens``, ``input_cost``, ``output_cost``,
     ``total_cost``.
     """
-    return dict(_llm_cost_accumulator.get())
+    return dict(_get_accumulator())
 
 
 async def get_llm_response(
@@ -191,7 +201,7 @@ async def get_llm_response(
                     response = await client.chat.completions.create(**kwargs)
                 _result = _lat_ctx.result
                 if _result is not None:
-                    _llm_cost_accumulator.get()["total_latency_ms"] += _result.total_ms
+                    _get_accumulator()["total_latency_ms"] += _result.total_ms
             except Exception as _lat_exc:
                 logger.warning("Latency tracking failed — falling back to untracked call", error=str(_lat_exc))
                 response = await client.chat.completions.create(**kwargs)
@@ -238,7 +248,7 @@ def _estimate_and_accumulate_tokens(system_prompt: str, user_prompt: str, model:
             LLMMessage(role=LLMMessageRole.USER, content=user_prompt),  # type: ignore[call-arg]
         ]
         token_count = counter.count_messages(messages, model=model)
-        acc = _llm_cost_accumulator.get()
+        acc = _get_accumulator()
         acc["estimated_text_tokens"] += token_count.text_tokens
         acc["estimated_overhead_tokens"] += token_count.overhead_tokens
         acc["estimated_total_tokens"] += token_count.total
@@ -277,7 +287,7 @@ def _compute_and_accumulate_cost(provider: str, model: str, response: Any) -> No
         )
 
         breakdown = tracker.compute_cost(call_input)
-        acc = _llm_cost_accumulator.get()
+        acc = _get_accumulator()
         acc["input_tokens"] += prompt_tokens
         acc["output_tokens"] += completion_tokens
         acc["input_cost"] += breakdown.input_cost
