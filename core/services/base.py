@@ -199,7 +199,7 @@ class BaseProfilerService(ABC):
                 raise self._map_error(exc, ctx) from exc
 
         # Reset per-task LLM cost accumulator before any augmentation calls.
-        from core.utils.llm_config import reset_cost_accumulator, get_accumulated_cost, get_accumulated_stats
+        from core.utils.llm_config import get_accumulated_stats, reset_cost_accumulator
 
         reset_cost_accumulator()
 

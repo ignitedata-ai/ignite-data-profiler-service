@@ -216,6 +216,7 @@ class TestS3ConnectionConfigSchema:
     def test_all_optional_for_iam_role(self, monkeypatch):
         # Patch settings to None so config uses IAM role credentials
         from core.config import settings
+
         monkeypatch.setattr(settings, "AWS_ACCESS_KEY_ID", None)
         monkeypatch.setattr(settings, "AWS_SECRET_ACCESS_KEY", None)
         monkeypatch.setattr(settings, "AWS_SESSION_TOKEN", None)
@@ -376,6 +377,7 @@ class TestS3FileProfilerServiceMetadata:
     def test_log_context_default(self, monkeypatch):
         # Patch settings to None so config uses IAM role credentials
         from core.config import settings
+
         monkeypatch.setattr(settings, "AWS_ACCESS_KEY_ID", None)
         monkeypatch.setattr(settings, "AWS_SECRET_ACCESS_KEY", None)
         monkeypatch.setattr(settings, "AWS_SESSION_TOKEN", None)
