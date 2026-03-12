@@ -117,7 +117,6 @@ def get_accumulated_stats() -> dict[str, float]:
     return dict(_llm_cost_accumulator.get())
 
 
-
 async def get_llm_response(
     client: AsyncPortkey,
     *,
@@ -184,6 +183,7 @@ async def get_llm_response(
     # ── LLM call (with optional latency measurement) ───────────────────────────
     if _latency_tracking_available and llm_track_latency is not None:
         from core.services.latency_tracking import get_latency_tracker as _get_lat
+
         _tracker = _get_lat()
         if _tracker is not None:
             try:

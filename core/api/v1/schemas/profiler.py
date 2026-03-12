@@ -445,15 +445,9 @@ class LLMUsageStats(BaseModel):
     estimated_overhead_tokens: int = Field(
         description="Token overhead added by the chat message format (role markers, separators)."
     )
-    estimated_total_tokens: int = Field(
-        description="Pre-call estimated total tokens (text + overhead) across all LLM calls."
-    )
-    estimated_message_count: int = Field(
-        description="Total number of messages (system + user) sent across all LLM calls."
-    )
-    total_latency_ms: float = Field(
-        description="Total wall-clock latency in milliseconds across all LLM API calls."
-    )
+    estimated_total_tokens: int = Field(description="Pre-call estimated total tokens (text + overhead) across all LLM calls.")
+    estimated_message_count: int = Field(description="Total number of messages (system + user) sent across all LLM calls.")
+    total_latency_ms: float = Field(description="Total wall-clock latency in milliseconds across all LLM API calls.")
 
 
 class ProfilingResponse(BaseModel):

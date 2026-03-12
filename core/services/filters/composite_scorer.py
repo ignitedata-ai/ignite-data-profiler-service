@@ -66,7 +66,6 @@ def classify_filter_type(candidate: ColumnFilterCandidate) -> str:
     return "categorical"
 
 
-
 # ── Triage ────────────────────────────────────────────────────────────────────
 
 

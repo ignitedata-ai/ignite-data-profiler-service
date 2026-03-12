@@ -200,6 +200,7 @@ class BaseProfilerService(ABC):
 
         # Reset per-task LLM cost accumulator before any augmentation calls.
         from core.utils.llm_config import reset_cost_accumulator, get_accumulated_cost, get_accumulated_stats
+
         reset_cost_accumulator()
 
         def _phase_log(event: str) -> None:
@@ -247,6 +248,7 @@ class BaseProfilerService(ABC):
 
         # Attach aggregated LLM usage stats for the caller service.
         from core.api.v1.schemas.profiler import LLMUsageStats
+
         stats = get_accumulated_stats()
         if stats["total_cost"] > 0 or stats["estimated_total_tokens"] > 0 or stats["total_latency_ms"] > 0:
             response.llm_usage = LLMUsageStats(

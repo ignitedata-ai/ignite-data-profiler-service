@@ -46,7 +46,9 @@ def get_llm_client(
         resolved_virtual_key = portkey_virtual_key or settings.PORTKEY_VIRTUAL_KEY
 
         if not resolved_api_key or not resolved_virtual_key:
-            logger.warning("LLM_ENABLED is True but PORTKEY_API_KEY or PORTKEY_VIRTUAL_KEY is not set; description augmentation is disabled")
+            logger.warning(
+                "LLM_ENABLED is True but PORTKEY_API_KEY or PORTKEY_VIRTUAL_KEY is not set; description augmentation is disabled"
+            )
             return None
 
         logger.info(
