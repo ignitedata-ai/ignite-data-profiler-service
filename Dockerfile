@@ -28,7 +28,7 @@ COPY pyproject.toml uv.lock ./
 COPY libs/ libs/
 RUN UV_INDEX_CODEARTIFACT_USERNAME=aws \
     UV_INDEX_CODEARTIFACT_PASSWORD=${AWS_CODEARTIFACT_TOKEN} \
-    uv sync --frozen --no-cache --no-dev --no-editable
+    uv pip install --system -e .
 
 # ---------- production stage ----------
 FROM python:3.12-slim AS production
@@ -43,12 +43,19 @@ ENV PYTHONUNBUFFERED=1 \
 RUN groupadd --gid 1000 appuser \
     && useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser
 
-WORKDIR /app
-RUN chown -R appuser:appuser /app
+# Install system dependencies for runtime
+RUN apt-get update && apt-get install -y \
+    libpq5 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy the virtual-env from the builder
-COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
-ENV PATH="/app/.venv/bin:$PATH"
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Set work directory
+WORKDIR /app
+RUN chown -R appuser:appuser /app
 
 # Copy application code
 COPY . .
