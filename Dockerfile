@@ -28,7 +28,7 @@ COPY pyproject.toml uv.lock ./
 COPY libs/ libs/
 RUN UV_INDEX_CODEARTIFACT_USERNAME=aws \
     UV_INDEX_CODEARTIFACT_PASSWORD=${AWS_CODEARTIFACT_TOKEN} \
-    uv pip install --system -e .
+    uv pip install --system .
 
 # ---------- production stage ----------
 FROM python:3.12-slim AS production
@@ -49,7 +49,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the virtual-env from the builder
+# Copy installed packages from builder
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
