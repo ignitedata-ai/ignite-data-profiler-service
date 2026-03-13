@@ -60,14 +60,14 @@ jobs:
         aws ecr describe-images --repository-name ${{ inputs.PROJECT }}-${{ inputs.ECR_REPOSITORY }} --image-ids imageTag=${{ inputs.ENVIRONMENT }}  --region ${{ inputs.AWS_REGION }}
 
         echo "Force deploy the service"
-        aws ecs update-service --force-new-deployment --cluster aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-cluster --service aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-lens-service > /dev/null
+        aws ecs update-service --force-new-deployment --cluster aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-cluster --service aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-${{ inputs.ECR_REPOSITORY }}-service > /dev/null
 
         echo ""
         echo "Triggered the deployment"
 
         echo ""
         echo "Wait for the service to be stable ..."
-        aws ecs wait services-stable --cluster aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-cluster --services aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-lens-service
+        aws ecs wait services-stable --cluster aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-cluster --services aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-${{ inputs.ECR_REPOSITORY }}-service
 
         STATUS=$?
 
@@ -97,14 +97,14 @@ jobs:
         aws ecr describe-images --repository-name ${{ inputs.PROJECT }}-${{ inputs.ECR_REPOSITORY }} --image-ids imageTag=${{ inputs.ENVIRONMENT }}  --region ${{ inputs.AWS_REGION }}
 
         echo "Force deploy the service"
-        aws ecs update-service --force-new-deployment --cluster aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-cluster --service aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-lens-service > /dev/null
+        aws ecs update-service --force-new-deployment --cluster aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-cluster --service aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-${{ inputs.ECR_REPOSITORY }}-service > /dev/null
 
         echo ""
         echo "Triggered the deployment"
 
         echo ""
         echo "Wait for the service to be stable ..."
-        aws ecs wait services-stable --cluster aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-cluster --services aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-lens-service
+        aws ecs wait services-stable --cluster aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-cluster --services aws-${{ inputs.PROJECT }}-${{ inputs.ENVIRONMENT }}-${{ inputs.ECR_REPOSITORY }}-service
 
         STATUS=$?
 
