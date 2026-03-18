@@ -361,6 +361,7 @@ class OpenAILLMClient(BaseLLMClient):
 
     def __init__(
         self,
+        provider: str | None = None,
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
@@ -372,6 +373,8 @@ class OpenAILLMClient(BaseLLMClient):
             api_key=portkey_api_key or settings.PORTKEY_API_KEY,
             virtual_key=portkey_virtual_key or settings.PORTKEY_VIRTUAL_KEY,
         )
+        # Use provider from caller, fallback to class default
+        self._actual_provider = provider or self.provider_name
         self._model = model or settings.LLM_MODEL
         self._temperature = temperature if temperature is not None else settings.LLM_TEMPERATURE
         self._max_tokens = max_tokens or settings.LLM_MAX_TOKENS
@@ -381,7 +384,7 @@ class OpenAILLMClient(BaseLLMClient):
         prompt = _build_prompt(table)
         logger.debug(
             "Requesting LLM description",
-            provider=self.provider_name,
+            provider=self._actual_provider,
             model=self._model,
             table=f"{table.schema_name}.{table.name}",
         )
@@ -394,7 +397,7 @@ class OpenAILLMClient(BaseLLMClient):
             ),
             user_prompt=prompt,
             model=self._model,
-            provider=self.provider_name,
+            provider=self._actual_provider,
             temperature=self._temperature,
             max_tokens=self._max_tokens,
         )
@@ -402,7 +405,7 @@ class OpenAILLMClient(BaseLLMClient):
             description = raw.strip()
             logger.debug(
                 "LLM description received",
-                provider=self.provider_name,
+                provider=self._actual_provider,
                 table=f"{table.schema_name}.{table.name}",
                 chars=len(description),
             )
@@ -414,7 +417,7 @@ class OpenAILLMClient(BaseLLMClient):
         prompt = _build_column_prompt(column, table)
         logger.debug(
             "Requesting LLM column description",
-            provider=self.provider_name,
+            provider=self._actual_provider,
             model=self._model,
             table=f"{table.schema_name}.{table.name}",
             column=column.name,
@@ -428,7 +431,7 @@ class OpenAILLMClient(BaseLLMClient):
             ),
             user_prompt=prompt,
             model=self._model,
-            provider=self.provider_name,
+            provider=self._actual_provider,
             temperature=self._temperature,
             max_tokens=self._max_tokens,
         )
@@ -436,7 +439,7 @@ class OpenAILLMClient(BaseLLMClient):
             description = raw.strip()
             logger.debug(
                 "LLM column description received",
-                provider=self.provider_name,
+                provider=self._actual_provider,
                 table=f"{table.schema_name}.{table.name}",
                 column=column.name,
                 chars=len(description),
@@ -449,7 +452,7 @@ class OpenAILLMClient(BaseLLMClient):
         prompt = _build_glossary_prompt(table)
         logger.debug(
             "Requesting LLM glossary inference",
-            provider=self.provider_name,
+            provider=self._actual_provider,
             model=self._model,
             table=f"{table.schema_name}.{table.name}",
         )
@@ -462,7 +465,7 @@ class OpenAILLMClient(BaseLLMClient):
             ),
             user_prompt=prompt,
             model=self._model,
-            provider=self.provider_name,
+            provider=self._actual_provider,
             temperature=self._temperature,
             max_tokens=_GLOSSARY_MAX_TOKENS,
             response_format={"type": "json_object"},
@@ -477,7 +480,7 @@ class OpenAILLMClient(BaseLLMClient):
             terms = ta.validate_python(terms_raw)
             logger.debug(
                 "LLM glossary terms received",
-                provider=self.provider_name,
+                provider=self._actual_provider,
                 table=f"{table.schema_name}.{table.name}",
                 term_count=len(terms),
             )
@@ -485,7 +488,7 @@ class OpenAILLMClient(BaseLLMClient):
         except Exception as exc:
             logger.warning(
                 "Failed to parse glossary terms from LLM response",
-                provider=self.provider_name,
+                provider=self._actual_provider,
                 table=f"{table.schema_name}.{table.name}",
                 error=str(exc),
             )
@@ -501,30 +504,26 @@ class OpenAILLMClient(BaseLLMClient):
         prompt = _build_filter_judge_prompt(table_name, table_role, candidates)
         logger.debug(
             "Requesting filter column judgment",
-            provider=self.provider_name,
+            provider=self._actual_provider,
             model=self._model,
             table=table_name,
             candidate_count=len(candidates),
         )
 
-        response = await self._client.chat.completions.create(
+        raw = await get_llm_response(
+            self._client,
+            system_prompt=(
+                "You are a data analytics expert judging whether database columns "
+                "are suitable as analytical filters. Always respond with valid JSON only."
+            ),
+            user_prompt=prompt,
             model=self._model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a data analytics expert judging whether database columns "
-                        "are suitable as analytical filters. Always respond with valid JSON only."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
+            provider=self._actual_provider,
             temperature=self._temperature,
             max_tokens=_FILTER_JUDGE_MAX_TOKENS,
             response_format={"type": "json_object"},
         )
 
-        raw = response.choices[0].message.content
         if not raw:
             return []
 
@@ -547,7 +546,7 @@ class OpenAILLMClient(BaseLLMClient):
         except Exception as exc:
             logger.warning(
                 "Failed to parse filter judgment from LLM response",
-                provider=self.provider_name,
+                provider=self._actual_provider,
                 table=table_name,
                 error=str(exc),
             )
@@ -562,7 +561,7 @@ class OpenAILLMClient(BaseLLMClient):
         prompt = _build_kpi_cluster_prompt(tables, max_domains)
         logger.debug(
             "Requesting KPI domain clustering",
-            provider=self.provider_name,
+            provider=self._actual_provider,
             model=self._model,
             table_count=len(tables),
             max_domains=max_domains,
@@ -575,7 +574,7 @@ class OpenAILLMClient(BaseLLMClient):
             ),
             user_prompt=prompt,
             model=self._model,
-            provider=self.provider_name,
+            provider=self._actual_provider,
             temperature=self._temperature,
             max_tokens=_KPI_CLUSTER_MAX_TOKENS,
             response_format={"type": "json_object"},
@@ -594,7 +593,7 @@ class OpenAILLMClient(BaseLLMClient):
                     result[domain] = table_list
             logger.debug(
                 "KPI domain clustering received",
-                provider=self.provider_name,
+                provider=self._actual_provider,
                 domain_count=len(result),
             )
 
@@ -602,7 +601,7 @@ class OpenAILLMClient(BaseLLMClient):
         except Exception as exc:
             logger.warning(
                 "Failed to parse domain clusters from LLM response",
-                provider=self.provider_name,
+                provider=self._actual_provider,
                 error=str(exc),
             )
             return {}
@@ -617,7 +616,7 @@ class OpenAILLMClient(BaseLLMClient):
         prompt = _build_kpi_generate_prompt(domain_name, domain_tables, max_kpis)
         logger.debug(
             "Requesting domain KPI generation",
-            provider=self.provider_name,
+            provider=self._actual_provider,
             model=self._model,
             domain=domain_name,
             table_count=len(domain_tables),
@@ -630,7 +629,7 @@ class OpenAILLMClient(BaseLLMClient):
             ),
             user_prompt=prompt,
             model=self._model,
-            provider=self.provider_name,
+            provider=self._actual_provider,
             temperature=self._temperature,
             max_tokens=_KPI_GENERATE_MAX_TOKENS,
             response_format={"type": "json_object"},
@@ -658,7 +657,7 @@ class OpenAILLMClient(BaseLLMClient):
 
             logger.debug(
                 "Domain KPIs received",
-                provider=self.provider_name,
+                provider=self._actual_provider,
                 domain=domain_name,
                 kpi_count=len(kpis),
             )
@@ -666,7 +665,7 @@ class OpenAILLMClient(BaseLLMClient):
         except Exception as exc:
             logger.warning(
                 "Failed to parse domain KPIs from LLM response",
-                provider=self.provider_name,
+                provider=self._actual_provider,
                 domain=domain_name,
                 error=str(exc),
             )

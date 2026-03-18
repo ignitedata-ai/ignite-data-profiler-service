@@ -293,6 +293,8 @@ class BaseProfilerService(ABC):
         from core.llm import get_llm_client
 
         llm = get_llm_client(
+            provider=cfg.llm_provider,
+            model=cfg.llm_model,
             portkey_api_key=cfg.portkey_api_key,
             portkey_virtual_key=cfg.portkey_virtual_key,
         )
@@ -344,6 +346,8 @@ class BaseProfilerService(ABC):
         from core.llm import get_llm_client
 
         llm = get_llm_client(
+            provider=cfg.llm_provider,
+            model=cfg.llm_model,
             portkey_api_key=cfg.portkey_api_key,
             portkey_virtual_key=cfg.portkey_virtual_key,
         )
@@ -395,6 +399,8 @@ class BaseProfilerService(ABC):
         from core.llm import get_llm_client
 
         llm = get_llm_client(
+            provider=cfg.llm_provider,
+            model=cfg.llm_model,
             portkey_api_key=cfg.portkey_api_key,
             portkey_virtual_key=cfg.portkey_virtual_key,
         )
@@ -446,6 +452,8 @@ class BaseProfilerService(ABC):
         from core.llm import get_llm_client
 
         llm = get_llm_client(
+            provider=cfg.llm_provider,
+            model=cfg.llm_model,
             portkey_api_key=cfg.portkey_api_key,
             portkey_virtual_key=cfg.portkey_virtual_key,
         )
