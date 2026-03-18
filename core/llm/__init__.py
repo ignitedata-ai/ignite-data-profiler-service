@@ -25,9 +25,9 @@ def get_llm_client(
     """Return a configured LLM client based on provider.
 
     Args:
-        provider: LLM provider name (e.g., 'openai', 'groq', 'anthropic'). 
+        provider: LLM provider name (e.g., 'openai', 'groq', 'anthropic').
             Falls back to ``settings.LLM_PROVIDER`` when ``None``.
-        model: LLM model name (e.g., 'gpt-4o', 'llama-3.3-70b-versatile'). 
+        model: LLM model name (e.g., 'gpt-4o', 'llama-3.3-70b-versatile').
             Falls back to ``settings.LLM_MODEL`` when ``None``.
         portkey_api_key: Per-request Portkey API key override. Falls back to
             ``settings.PORTKEY_API_KEY`` when ``None``.
@@ -50,7 +50,7 @@ def get_llm_client(
 
     # Supported providers via Portkey
     SUPPORTED_PROVIDERS = ["openai", "groq", "anthropic", "azure", "cohere", "google"]
-    
+
     if provider.lower() not in SUPPORTED_PROVIDERS:
         logger.warning("Unknown LLM_PROVIDER; description augmentation disabled", provider=provider)
         return None

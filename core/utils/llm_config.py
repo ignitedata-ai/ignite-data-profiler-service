@@ -286,7 +286,7 @@ def _compute_and_accumulate_cost(provider: str, model: str, response: Any) -> No
                 usage_dict = {k: v for k, v in usage.__dict__.items()}
             elif isinstance(usage, dict):
                 usage_dict = dict(usage)
-            
+
             logger.info(
                 "🔍 GROQ Usage object structure",
                 provider=provider,
@@ -313,7 +313,7 @@ def _compute_and_accumulate_cost(provider: str, model: str, response: Any) -> No
             # Try Anthropic-style field names
             prompt_tokens = getattr(usage, "input_tokens", 0) or 0
             completion_tokens = getattr(usage, "output_tokens", 0) or 0
-            
+
             logger.info(
                 "Tried alternate field names",
                 provider=provider,
@@ -321,7 +321,7 @@ def _compute_and_accumulate_cost(provider: str, model: str, response: Any) -> No
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
             )
-            
+
             # If still 0, log diagnostic info
             if prompt_tokens == 0 and completion_tokens == 0:
                 usage_attrs = {}
@@ -329,7 +329,7 @@ def _compute_and_accumulate_cost(provider: str, model: str, response: Any) -> No
                     usage_attrs = list(usage.__dict__.keys())
                 elif isinstance(usage, dict):
                     usage_attrs = list(usage.keys())
-                
+
                 logger.error(
                     "⚠️ Token extraction FAILED - all attempts returned 0",
                     provider=provider,
