@@ -154,6 +154,20 @@ class ProfilingConfig(BaseModel):
             "server-side PORTKEY_VIRTUAL_KEY env var. Falls back to server env when null."
         ),
     )
+    llm_provider: str | None = Field(
+        default=None,
+        description=(
+            "LLM provider name for this request (e.g., 'openai', 'groq', 'anthropic'). "
+            "When provided, overrides the server-side LLM_PROVIDER env var. Falls back to server env when null."
+        ),
+    )
+    llm_model: str | None = Field(
+        default=None,
+        description=(
+            "LLM model name for this request (e.g., 'gpt-4o', 'qwen/qwen3-32b', 'claude-3-opus'). "
+            "When provided, overrides the server-side LLM_MODEL env var. Falls back to server env when null."
+        ),
+    )
 
 
 class PostgresProfilingRequest(BaseModel):

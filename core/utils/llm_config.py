@@ -271,10 +271,73 @@ def _compute_and_accumulate_cost(provider: str, model: str, response: Any) -> No
     try:
         usage = getattr(response, "usage", None)
         if usage is None:
+            logger.warning(
+                "No usage object in response",
+                provider=provider,
+                model=model,
+                response_type=type(response).__name__,
+            )
             return
 
+        # Log full usage object for Groq debugging
+        if provider.lower() == "groq":
+            usage_dict = {}
+            if hasattr(usage, "__dict__"):
+                usage_dict = {k: v for k, v in usage.__dict__.items()}
+            elif isinstance(usage, dict):
+                usage_dict = dict(usage)
+
+            logger.info(
+                "🔍 GROQ Usage object structure",
+                provider=provider,
+                model=model,
+                usage_type=type(usage).__name__,
+                usage_dict=usage_dict,
+                usage_repr=repr(usage),
+            )
+
+        # Standard extraction (works for OpenAI, Azure OpenAI, Groq)
         prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
         completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+
+        logger.info(
+            "Token extraction attempt",
+            provider=provider,
+            model=model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
+
+        # For Groq and Anthropic: try alternate field names if standard ones are 0
+        if prompt_tokens == 0 and completion_tokens == 0:
+            # Try Anthropic-style field names
+            prompt_tokens = getattr(usage, "input_tokens", 0) or 0
+            completion_tokens = getattr(usage, "output_tokens", 0) or 0
+
+            logger.info(
+                "Tried alternate field names",
+                provider=provider,
+                model=model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+            )
+
+            # If still 0, log diagnostic info
+            if prompt_tokens == 0 and completion_tokens == 0:
+                usage_attrs = {}
+                if hasattr(usage, "__dict__"):
+                    usage_attrs = list(usage.__dict__.keys())
+                elif isinstance(usage, dict):
+                    usage_attrs = list(usage.keys())
+
+                logger.error(
+                    "⚠️ Token extraction FAILED - all attempts returned 0",
+                    provider=provider,
+                    model=model,
+                    usage_type=type(usage).__name__,
+                    available_fields=usage_attrs,
+                    usage_value=str(usage)[:500],
+                )
 
         call_input = LLMCallInput(  # type: ignore[call-arg]
             provider=provider,

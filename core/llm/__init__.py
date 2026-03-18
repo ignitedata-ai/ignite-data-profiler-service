@@ -17,16 +17,22 @@ logger = get_logger(__name__)
 
 
 def get_llm_client(
+    provider: str | None = None,
+    model: str | None = None,
     portkey_api_key: str | None = None,
     portkey_virtual_key: str | None = None,
 ) -> BaseLLMClient | None:
-    """Return a configured LLM client based on ``settings.LLM_PROVIDER``.
+    """Return a configured LLM client based on provider.
 
     Args:
-        portkey_api_key: Per-request Portkey API key override.  Falls back to
-            ``settings.PORTKEY_API_KEY`` when ``None`` or empty.
-        portkey_virtual_key: Per-request Portkey virtual key override.  Falls
-            back to ``settings.PORTKEY_VIRTUAL_KEY`` when ``None`` or empty.
+        provider: LLM provider name (e.g., 'openai', 'groq', 'anthropic').
+            Falls back to ``settings.LLM_PROVIDER`` when ``None``.
+        model: LLM model name (e.g., 'gpt-4o', 'llama-3.3-70b-versatile').
+            Falls back to ``settings.LLM_MODEL`` when ``None``.
+        portkey_api_key: Per-request Portkey API key override. Falls back to
+            ``settings.PORTKEY_API_KEY`` when ``None``.
+        portkey_virtual_key: Per-request Portkey virtual key override. Falls
+            back to ``settings.PORTKEY_VIRTUAL_KEY`` when ``None``.
 
     Returns:
         A ready-to-use ``BaseLLMClient`` subclass instance, or ``None`` if
@@ -36,37 +42,41 @@ def get_llm_client(
     if not settings.LLM_ENABLED:
         return None
 
-    provider = settings.LLM_PROVIDER.lower()
+    # Use passed values or fall back to env vars
+    provider = provider or settings.LLM_PROVIDER
+    model = model or settings.LLM_MODEL
+    portkey_api_key = portkey_api_key or settings.PORTKEY_API_KEY
+    portkey_virtual_key = portkey_virtual_key or settings.PORTKEY_VIRTUAL_KEY
 
-    if provider == "openai":
-        from core.llm.openai import OpenAILLMClient
+    # Supported providers via Portkey
+    SUPPORTED_PROVIDERS = ["openai", "groq", "anthropic", "azure", "cohere", "google"]
 
-        # Resolve keys: request-level overrides take precedence over env vars.
-        resolved_api_key = portkey_api_key or settings.PORTKEY_API_KEY
-        resolved_virtual_key = portkey_virtual_key or settings.PORTKEY_VIRTUAL_KEY
+    if provider.lower() not in SUPPORTED_PROVIDERS:
+        logger.warning("Unknown LLM_PROVIDER; description augmentation disabled", provider=provider)
+        return None
 
-        if not resolved_api_key or not resolved_virtual_key:
-            logger.warning(
-                "LLM_ENABLED is True but PORTKEY_API_KEY or PORTKEY_VIRTUAL_KEY is not set; description augmentation is disabled"
-            )
-            return None
+    from core.llm.openai import OpenAILLMClient
 
-        logger.info(
-            "LLM client initialised",
-            provider="openai (portkey)",
-            model=settings.LLM_MODEL,
-            key_source="request" if portkey_api_key else "env",
-            virtual_key_source="request" if portkey_virtual_key else "env",
-            passed_api_key_prefix=portkey_api_key[:8] + "..." if portkey_api_key else None,
-            passed_virtual_key_prefix=portkey_virtual_key[:12] + "..." if portkey_virtual_key else None,
+    if not portkey_api_key or not portkey_virtual_key:
+        logger.warning(
+            "LLM_ENABLED is True but PORTKEY_API_KEY or PORTKEY_VIRTUAL_KEY is not set; description augmentation is disabled"
         )
-        return OpenAILLMClient(
-            portkey_api_key=resolved_api_key,
-            portkey_virtual_key=resolved_virtual_key,
-        )
+        return None
 
-    logger.warning("Unknown LLM_PROVIDER; description augmentation disabled", provider=provider)
-    return None
+    logger.info(
+        "LLM client initialised",
+        provider=provider,
+        model=model,
+        key_source="request" if portkey_api_key else "env",
+        virtual_key_source="request" if portkey_virtual_key else "env",
+        passed_virtual_key_prefix=portkey_virtual_key[:12] + "..." if portkey_virtual_key else None,
+    )
+    return OpenAILLMClient(
+        provider=provider,
+        model=model,
+        portkey_api_key=portkey_api_key,
+        portkey_virtual_key=portkey_virtual_key,
+    )
 
 
 __all__ = ["get_llm_client", "BaseLLMClient"]
