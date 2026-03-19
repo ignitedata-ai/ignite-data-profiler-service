@@ -1,4 +1,4 @@
-"""OpenAI LLM client for table and column description augmentation."""
+"""Portkey-backed LLM client for table and column description augmentation."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from core.api.v1.schemas.profiler import ColumnMetadata, GlossaryTerm, KPITerm, 
 from core.config import settings
 from core.llm.base import BaseLLMClient
 from core.logging import get_logger
-from core.utils.llm_config import get_llm_response
+from core.utils.llm_config import extract_json, get_llm_response
 
 logger = get_logger(__name__)
 
@@ -190,8 +190,18 @@ For each term provide:
 - description: 1-2 sentences explaining the term in this business context
 - synonyms: common alternative names or abbreviations (may be an empty list)
 
-Respond ONLY with valid JSON in exactly this format (no markdown, no preamble):
-{{"terms": [{{"business_term": "...", "description": "...", "synonyms": ["...", "..."]}}]}}
+Respond ONLY with valid JSON in exactly this format:
+```json
+{{
+        "terms": [
+        {{
+            "business_term": "...",
+            "description": "...",
+            "synonyms": ["...", "..."]
+        }}
+    ]
+}}
+```
 """
 
 
@@ -213,8 +223,15 @@ Rules:
 Tables:
 {table_names}
 
-Respond ONLY with valid JSON in exactly this format (no markdown, no preamble):
-{{"domains": [{{"domain": "Finance", "tables": ["public.invoices", "public.payments"]}}]}}
+Respond ONLY with valid JSON in exactly this format:
+```json
+{{"domains": [
+    {{
+        "domain": "Finance",
+        "tables": ["public.invoices", "public.payments"]
+    }}
+]}}
+```
 """
 
 
@@ -290,9 +307,17 @@ For each KPI provide:
 - calculation: a valid SQL expression using the table and column names above
 - linked_columns: list of column names from the Valid Columns Reference directly used in the calculation
 
-Respond ONLY with valid JSON in exactly this format (no markdown, no preamble):
-{{"kpis": [{{"name": "...", "description": "...", "calculation": "...",
-           "linked_columns": ["orders.amount", "orders.status"]}}]}}
+Respond ONLY with valid JSON in exactly this format:
+```json
+{{"kpis": [
+    {{
+        "name": "...",
+        "description": "...",
+        "calculation": "...",
+        "linked_columns": ["orders.amount", "orders.status"]
+    }}
+]}}
+```
 """
 
 
@@ -330,7 +355,8 @@ For each candidate, respond with:
 - agrees_with_heuristic: true if you broadly agree with the composite_score, false if you disagree
 - reasoning: 1 sentence explaining your judgment
 
-Respond ONLY with valid JSON in exactly this format (no markdown, no preamble):
+Respond ONLY with valid JSON in exactly this format:
+```json
 {{
     "columns": [
         {{
@@ -343,21 +369,25 @@ Respond ONLY with valid JSON in exactly this format (no markdown, no preamble):
         }}
     ]
 }}
+```
 """
 
 
-class OpenAILLMClient(BaseLLMClient):
-    """LLM client backed by OpenAI via the Portkey gateway (async).
+class PortkeyLLMClient(BaseLLMClient):
+    """Provider-agnostic LLM client routed through the Portkey gateway (async).
+
+    All provider selection (openai, anthropic, groq, etc.) is handled by the
+    Portkey virtual key — this client is not tied to any single provider.
 
     Args:
+        provider: LLM provider name as understood by Portkey (e.g. ``"openai"``,
+            ``"groq"``). Defaults to ``settings.LLM_PROVIDER``.
         model: Model ID.  Defaults to ``settings.LLM_MODEL``.
         temperature: Sampling temperature.  Defaults to ``settings.LLM_TEMPERATURE``.
         max_tokens: Response length cap.  Defaults to ``settings.LLM_MAX_TOKENS``.
         timeout: Unused — Portkey manages timeouts via the gateway.
 
     """
-
-    provider_name = "openai"
 
     def __init__(
         self,
@@ -373,18 +403,17 @@ class OpenAILLMClient(BaseLLMClient):
             api_key=portkey_api_key or settings.PORTKEY_API_KEY,
             virtual_key=portkey_virtual_key or settings.PORTKEY_VIRTUAL_KEY,
         )
-        # Use provider from caller, fallback to class default
-        self._actual_provider = provider or self.provider_name
+        self.provider_name = provider or settings.LLM_PROVIDER
         self._model = model or settings.LLM_MODEL
         self._temperature = temperature if temperature is not None else settings.LLM_TEMPERATURE
         self._max_tokens = max_tokens or settings.LLM_MAX_TOKENS
 
     async def _describe_table(self, table: TableMetadata) -> str | None:
-        """Call the OpenAI Chat Completions endpoint for one table."""
+        """Call the Portkey gateway for one table description."""
         prompt = _build_prompt(table)
         logger.debug(
             "Requesting LLM description",
-            provider=self._actual_provider,
+            provider=self.provider_name,
             model=self._model,
             table=f"{table.schema_name}.{table.name}",
         )
@@ -397,7 +426,7 @@ class OpenAILLMClient(BaseLLMClient):
             ),
             user_prompt=prompt,
             model=self._model,
-            provider=self._actual_provider,
+            provider=self.provider_name,
             temperature=self._temperature,
             max_tokens=self._max_tokens,
         )
@@ -405,7 +434,7 @@ class OpenAILLMClient(BaseLLMClient):
             description = raw.strip()
             logger.debug(
                 "LLM description received",
-                provider=self._actual_provider,
+                provider=self.provider_name,
                 table=f"{table.schema_name}.{table.name}",
                 chars=len(description),
             )
@@ -413,11 +442,11 @@ class OpenAILLMClient(BaseLLMClient):
         return None
 
     async def _describe_column(self, column: ColumnMetadata, table: TableMetadata) -> str | None:
-        """Call the OpenAI Chat Completions endpoint for one column."""
+        """Call the Portkey gateway for one column description."""
         prompt = _build_column_prompt(column, table)
         logger.debug(
             "Requesting LLM column description",
-            provider=self._actual_provider,
+            provider=self.provider_name,
             model=self._model,
             table=f"{table.schema_name}.{table.name}",
             column=column.name,
@@ -431,7 +460,7 @@ class OpenAILLMClient(BaseLLMClient):
             ),
             user_prompt=prompt,
             model=self._model,
-            provider=self._actual_provider,
+            provider=self.provider_name,
             temperature=self._temperature,
             max_tokens=self._max_tokens,
         )
@@ -439,7 +468,7 @@ class OpenAILLMClient(BaseLLMClient):
             description = raw.strip()
             logger.debug(
                 "LLM column description received",
-                provider=self._actual_provider,
+                provider=self.provider_name,
                 table=f"{table.schema_name}.{table.name}",
                 column=column.name,
                 chars=len(description),
@@ -448,11 +477,11 @@ class OpenAILLMClient(BaseLLMClient):
         return None
 
     async def _infer_glossary(self, table: TableMetadata) -> list[GlossaryTerm]:
-        """Call the OpenAI Chat Completions endpoint to infer glossary terms for one table."""
+        """Call the Portkey gateway to infer glossary terms for one table."""
         prompt = _build_glossary_prompt(table)
         logger.debug(
             "Requesting LLM glossary inference",
-            provider=self._actual_provider,
+            provider=self.provider_name,
             model=self._model,
             table=f"{table.schema_name}.{table.name}",
         )
@@ -465,22 +494,21 @@ class OpenAILLMClient(BaseLLMClient):
             ),
             user_prompt=prompt,
             model=self._model,
-            provider=self._actual_provider,
+            provider=self.provider_name,
             temperature=self._temperature,
             max_tokens=_GLOSSARY_MAX_TOKENS,
-            response_format={"type": "json_object"},
         )
         if not raw:
             return []
 
         try:
-            data = json.loads(raw)
+            data = json.loads(extract_json(raw))
             terms_raw = data.get("terms", [])[:5]
             ta: TypeAdapter[list[GlossaryTerm]] = TypeAdapter(list[GlossaryTerm])
             terms = ta.validate_python(terms_raw)
             logger.debug(
                 "LLM glossary terms received",
-                provider=self._actual_provider,
+                provider=self.provider_name,
                 table=f"{table.schema_name}.{table.name}",
                 term_count=len(terms),
             )
@@ -488,7 +516,7 @@ class OpenAILLMClient(BaseLLMClient):
         except Exception as exc:
             logger.warning(
                 "Failed to parse glossary terms from LLM response",
-                provider=self._actual_provider,
+                provider=self.provider_name,
                 table=f"{table.schema_name}.{table.name}",
                 error=str(exc),
             )
@@ -500,11 +528,11 @@ class OpenAILLMClient(BaseLLMClient):
         table_role: str,
         candidates: list[dict],
     ) -> list[dict]:
-        """Call OpenAI to judge filter column candidates."""
+        """Call the Portkey gateway to judge filter column candidates."""
         prompt = _build_filter_judge_prompt(table_name, table_role, candidates)
         logger.debug(
             "Requesting filter column judgment",
-            provider=self._actual_provider,
+            provider=self.provider_name,
             model=self._model,
             table=table_name,
             candidate_count=len(candidates),
@@ -518,17 +546,16 @@ class OpenAILLMClient(BaseLLMClient):
             ),
             user_prompt=prompt,
             model=self._model,
-            provider=self._actual_provider,
+            provider=self.provider_name,
             temperature=self._temperature,
             max_tokens=_FILTER_JUDGE_MAX_TOKENS,
-            response_format={"type": "json_object"},
         )
 
         if not raw:
             return []
 
         try:
-            data = json.loads(raw)
+            data = json.loads(extract_json(raw))
             columns = data.get("columns", [])
             results: list[dict] = []
             for item in columns:
@@ -546,7 +573,7 @@ class OpenAILLMClient(BaseLLMClient):
         except Exception as exc:
             logger.warning(
                 "Failed to parse filter judgment from LLM response",
-                provider=self._actual_provider,
+                provider=self.provider_name,
                 table=table_name,
                 error=str(exc),
             )
@@ -557,11 +584,11 @@ class OpenAILLMClient(BaseLLMClient):
         tables: list[TableMetadata],
         max_domains: int,
     ) -> dict[str, list[str]]:
-        """Phase A: call OpenAI to cluster table names into business domains."""
+        """Phase A: call the Portkey gateway to cluster table names into business domains."""
         prompt = _build_kpi_cluster_prompt(tables, max_domains)
         logger.debug(
             "Requesting KPI domain clustering",
-            provider=self._actual_provider,
+            provider=self.provider_name,
             model=self._model,
             table_count=len(tables),
             max_domains=max_domains,
@@ -574,16 +601,15 @@ class OpenAILLMClient(BaseLLMClient):
             ),
             user_prompt=prompt,
             model=self._model,
-            provider=self._actual_provider,
+            provider=self.provider_name,
             temperature=self._temperature,
             max_tokens=_KPI_CLUSTER_MAX_TOKENS,
-            response_format={"type": "json_object"},
         )
         if not raw:
             return {}
 
         try:
-            data = json.loads(raw)
+            data = json.loads(extract_json(raw))
             domains_raw = data.get("domains", [])
             result: dict[str, list[str]] = {}
             for item in domains_raw:
@@ -593,7 +619,7 @@ class OpenAILLMClient(BaseLLMClient):
                     result[domain] = table_list
             logger.debug(
                 "KPI domain clustering received",
-                provider=self._actual_provider,
+                provider=self.provider_name,
                 domain_count=len(result),
             )
 
@@ -601,7 +627,7 @@ class OpenAILLMClient(BaseLLMClient):
         except Exception as exc:
             logger.warning(
                 "Failed to parse domain clusters from LLM response",
-                provider=self._actual_provider,
+                provider=self.provider_name,
                 error=str(exc),
             )
             return {}
@@ -612,11 +638,11 @@ class OpenAILLMClient(BaseLLMClient):
         domain_tables: list[TableMetadata],
         max_kpis: int,
     ) -> list[KPITerm]:
-        """Phase B: call OpenAI to generate KPIs for one business domain."""
+        """Phase B: call the Portkey gateway to generate KPIs for one business domain."""
         prompt = _build_kpi_generate_prompt(domain_name, domain_tables, max_kpis)
         logger.debug(
             "Requesting domain KPI generation",
-            provider=self._actual_provider,
+            provider=self.provider_name,
             model=self._model,
             domain=domain_name,
             table_count=len(domain_tables),
@@ -629,16 +655,15 @@ class OpenAILLMClient(BaseLLMClient):
             ),
             user_prompt=prompt,
             model=self._model,
-            provider=self._actual_provider,
+            provider=self.provider_name,
             temperature=self._temperature,
             max_tokens=_KPI_GENERATE_MAX_TOKENS,
-            response_format={"type": "json_object"},
         )
         if not raw:
             return []
 
         try:
-            data = json.loads(raw)
+            data = json.loads(extract_json(raw))
             kpis_raw = data.get("kpis", [])[:max_kpis]
             ta: TypeAdapter[list[KPITerm]] = TypeAdapter(list[KPITerm])
             kpis = ta.validate_python(kpis_raw)
@@ -657,7 +682,7 @@ class OpenAILLMClient(BaseLLMClient):
 
             logger.debug(
                 "Domain KPIs received",
-                provider=self._actual_provider,
+                provider=self.provider_name,
                 domain=domain_name,
                 kpi_count=len(kpis),
             )
@@ -665,7 +690,7 @@ class OpenAILLMClient(BaseLLMClient):
         except Exception as exc:
             logger.warning(
                 "Failed to parse domain KPIs from LLM response",
-                provider=self._actual_provider,
+                provider=self.provider_name,
                 domain=domain_name,
                 error=str(exc),
             )

@@ -1,4 +1,4 @@
-"""Tests for OpenAILLMClient prompt building and API integration."""
+"""Tests for PortkeyLLMClient prompt building and API integration."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.api.v1.schemas.profiler import ColumnMetadata, TableMetadata
-from core.llm.openai import (
+from core.llm.portkey import (
     _GLOSSARY_MAX_TOKENS,
-    OpenAILLMClient,
+    PortkeyLLMClient,
     _build_column_prompt,
     _build_glossary_prompt,
     _build_prompt,
@@ -64,9 +64,9 @@ def _make_table() -> TableMetadata:
     )
 
 
-def _make_client() -> OpenAILLMClient:
-    with patch("core.llm.openai.AsyncPortkey"):
-        return OpenAILLMClient(model="gpt-4o-mini")
+def _make_client() -> PortkeyLLMClient:
+    with patch("core.llm.portkey.AsyncPortkey"):
+        return PortkeyLLMClient(model="gpt-4o-mini")
 
 
 # ── Prompt building ────────────────────────────────────────────────────────────
@@ -132,10 +132,10 @@ class TestBuildPrompt:
         assert "Primary identifier" in prompt
 
 
-# ── OpenAILLMClient._describe_table ───────────────────────────────────────────
+# ── PortkeyLLMClient._describe_table ──────────────────────────────────────────
 
 
-class TestOpenAILLMClientDescribeTable:
+class TestPortkeyLLMClientDescribeTable:
     async def test_returns_stripped_content(self):
         client = _make_client()
         mock_choice = MagicMock()
@@ -282,10 +282,10 @@ class TestBuildColumnPrompt:
         assert "more columns" in prompt
 
 
-# ── OpenAILLMClient._describe_column ─────────────────────────────────────────
+# ── PortkeyLLMClient._describe_column ─────────────────────────────────────────
 
 
-class TestOpenAILLMClientDescribeColumn:
+class TestPortkeyLLMClientDescribeColumn:
     def _col(self) -> ColumnMetadata:
         return _make_column("email", data_type="character varying", is_nullable=False)
 
@@ -385,7 +385,7 @@ class TestBuildGlossaryPrompt:
         assert "more columns" in prompt
 
 
-# ── OpenAILLMClient._infer_glossary ───────────────────────────────────────────
+# ── PortkeyLLMClient._infer_glossary ──────────────────────────────────────────
 
 
 def _valid_glossary_json(terms: list[dict] | None = None) -> str:
@@ -397,7 +397,7 @@ def _valid_glossary_json(terms: list[dict] | None = None) -> str:
     return json.dumps({"terms": terms})
 
 
-class TestOpenAILLMClientInferGlossary:
+class TestPortkeyLLMClientInferGlossary:
     def _mock_response(self, content: str | None):
         mock_choice = MagicMock()
         mock_choice.message.content = content

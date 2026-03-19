@@ -1,8 +1,7 @@
 """Abstract base for LLM augmentation clients.
 
-All LLM providers must subclass this.  The base class owns the batch
-orchestration loop; concrete subclasses only implement the single-call
-I/O via ``_describe_table`` and ``_describe_column``.
+The base class owns the batch orchestration loop; concrete subclasses only
+implement the single-call I/O via ``_describe_table`` and ``_describe_column``.
 """
 
 from __future__ import annotations
@@ -19,10 +18,10 @@ logger = get_logger(__name__)
 class BaseLLMClient(ABC):
     """Abstract async LLM client for generating table and column descriptions.
 
-    Subclasses must implement:
+    Implementors must define:
         - :meth:`_describe_table`: issue one LLM call for a single table.
         - :meth:`_describe_column`: issue one LLM call for a single column.
-        - :attr:`provider_name`: human-readable name for logs.
+        - :attr:`provider_name`: human-readable provider name for log messages.
 
     The base class owns:
         - Batch slicing logic (``augment_tables``, ``augment_columns``).

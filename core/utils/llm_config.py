@@ -25,6 +25,7 @@ Usage::
 
 from __future__ import annotations
 
+import re
 from contextvars import ContextVar
 from typing import Any
 
@@ -33,6 +34,30 @@ from portkey_ai import AsyncPortkey
 from core.logging import get_logger
 
 logger = get_logger(__name__)
+
+_JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*\n(.*?)```", re.DOTALL)
+
+
+def extract_json(text: str) -> str:
+    """Extract JSON from a markdown code block, or return the text unchanged.
+
+    Handles both ````json`` and bare ```` ``` ```` fences.  When no fence is
+    present the original string is returned so it can be passed directly to
+    ``json.loads``.
+
+    Args:
+        text: Raw LLM response content.
+
+    Returns:
+        The extracted JSON string (stripped), or *text* itself if no code
+        fence was found.
+
+    """
+    match = _JSON_BLOCK_RE.search(text)
+    if match:
+        return match.group(1).strip()
+    return text.strip()
+
 
 # ── Cost tracking ─────────────────────────────────────────────────────────────
 # Per-asyncio-task accumulator stored as a mutable dict so that mutations inside
@@ -68,7 +93,7 @@ def _get_accumulator() -> dict[str, float]:
 
 # Attempt to import cost tracking types (graceful degradation if unavailable)
 try:
-    from ignite_llmops_lib.cost_tracker import (  # type: ignore[import-untyped]
+    from ignite_llmops_lib.cost_tracker import (
         LLMCallInput,
         LLMCallStatus,
         LLMTokenUsage,
@@ -76,30 +101,30 @@ try:
 
     _cost_tracking_available = True
 except ImportError:
-    LLMCallInput = None  # type: ignore[assignment,misc]
-    LLMCallStatus = None  # type: ignore[assignment,misc]
-    LLMTokenUsage = None  # type: ignore[assignment,misc]
+    LLMCallInput = None
+    LLMCallStatus = None
+    LLMTokenUsage = None
     _cost_tracking_available = False
     logger.warning("Cost tracking library not importable — costs will not be computed")
 
 # Attempt to import token counter types (graceful degradation if unavailable)
 try:
-    from ignite_llmops_lib.token_counter import LLMMessage, LLMMessageRole  # type: ignore[import-untyped]
+    from ignite_llmops_lib.token_counter import LLMMessage, LLMMessageRole
 
     _token_counting_available = True
 except ImportError:
-    LLMMessage = None  # type: ignore[assignment,misc]
-    LLMMessageRole = None  # type: ignore[assignment,misc]
+    LLMMessage = None
+    LLMMessageRole = None
     _token_counting_available = False
     logger.warning("Token counter library not importable — pre-call token estimation disabled")
 
 # Attempt to import latency tracking context manager (graceful degradation if unavailable)
 try:
-    from ignite_llmops_lib.latency_tracker.context import llm_track_latency  # type: ignore[import-untyped]
+    from ignite_llmops_lib.latency_tracker.context import llm_track_latency
 
     _latency_tracking_available = True
 except ImportError:
-    llm_track_latency = None  # type: ignore[assignment]
+    llm_track_latency = None
     _latency_tracking_available = False
     logger.warning("Latency tracker library not importable — per-call latency tracking disabled")
 
@@ -210,7 +235,7 @@ async def get_llm_response(
     else:
         response = await client.chat.completions.create(**kwargs)
 
-    content: str | None = response.choices[0].message.content
+    content: str | None = response.choices[0].message.content  # type: ignore
 
     logger.debug(
         "LLM response received",
@@ -283,7 +308,7 @@ def _compute_and_accumulate_cost(provider: str, model: str, response: Any) -> No
         if provider.lower() == "groq":
             usage_dict = {}
             if hasattr(usage, "__dict__"):
-                usage_dict = {k: v for k, v in usage.__dict__.items()}
+                usage_dict = usage.__dict__
             elif isinstance(usage, dict):
                 usage_dict = dict(usage)
 

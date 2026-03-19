@@ -22,11 +22,12 @@ def get_llm_client(
     portkey_api_key: str | None = None,
     portkey_virtual_key: str | None = None,
 ) -> BaseLLMClient | None:
-    """Return a configured LLM client based on provider.
+    """Return a configured LLM client backed by the Portkey gateway.
 
     Args:
-        provider: LLM provider name (e.g., 'openai', 'groq', 'anthropic').
-            Falls back to ``settings.LLM_PROVIDER`` when ``None``.
+        provider: LLM provider name as understood by Portkey (e.g., 'openai',
+            'groq', 'anthropic'). Invalid values will fail at call time via
+            Portkey. Falls back to ``settings.LLM_PROVIDER`` when ``None``.
         model: LLM model name (e.g., 'gpt-4o', 'llama-3.3-70b-versatile').
             Falls back to ``settings.LLM_MODEL`` when ``None``.
         portkey_api_key: Per-request Portkey API key override. Falls back to
@@ -35,8 +36,8 @@ def get_llm_client(
             back to ``settings.PORTKEY_VIRTUAL_KEY`` when ``None``.
 
     Returns:
-        A ready-to-use ``BaseLLMClient`` subclass instance, or ``None`` if
-        LLM augmentation is disabled or the provider is unrecognised.
+        A ready-to-use ``BaseLLMClient`` instance, or ``None`` if LLM
+        augmentation is disabled or Portkey credentials are not configured.
 
     """
     if not settings.LLM_ENABLED:
@@ -48,14 +49,7 @@ def get_llm_client(
     portkey_api_key = portkey_api_key or settings.PORTKEY_API_KEY
     portkey_virtual_key = portkey_virtual_key or settings.PORTKEY_VIRTUAL_KEY
 
-    # Supported providers via Portkey
-    SUPPORTED_PROVIDERS = ["openai", "groq", "anthropic", "azure", "cohere", "google"]
-
-    if provider.lower() not in SUPPORTED_PROVIDERS:
-        logger.warning("Unknown LLM_PROVIDER; description augmentation disabled", provider=provider)
-        return None
-
-    from core.llm.openai import OpenAILLMClient
+    from core.llm.portkey import PortkeyLLMClient
 
     if not portkey_api_key or not portkey_virtual_key:
         logger.warning(
@@ -71,7 +65,7 @@ def get_llm_client(
         virtual_key_source="request" if portkey_virtual_key else "env",
         passed_virtual_key_prefix=portkey_virtual_key[:12] + "..." if portkey_virtual_key else None,
     )
-    return OpenAILLMClient(
+    return PortkeyLLMClient(
         provider=provider,
         model=model,
         portkey_api_key=portkey_api_key,

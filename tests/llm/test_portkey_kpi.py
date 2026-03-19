@@ -1,4 +1,4 @@
-"""Tests for OpenAILLMClient KPI prompt builders and API integration."""
+"""Tests for PortkeyLLMClient KPI prompt builders and API integration."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.api.v1.schemas.profiler import ColumnMetadata, KPITerm, TableMetadata
-from core.llm.openai import (
+from core.llm.portkey import (
     _KPI_CLUSTER_MAX_TOKENS,
     _KPI_GENERATE_MAX_TOKENS,
-    OpenAILLMClient,
+    PortkeyLLMClient,
     _build_kpi_cluster_prompt,
     _build_kpi_generate_prompt,
     _build_valid_columns_reference,
@@ -58,9 +58,9 @@ def _make_kpi(name: str) -> KPITerm:
     )
 
 
-def _make_client() -> OpenAILLMClient:
-    with patch("core.llm.openai.AsyncPortkey"):
-        return OpenAILLMClient(model="gpt-4o-mini")
+def _make_client() -> PortkeyLLMClient:
+    with patch("core.llm.portkey.AsyncPortkey"):
+        return PortkeyLLMClient(model="gpt-4o-mini")
 
 
 def _mock_response(content: str | None) -> MagicMock:
@@ -232,7 +232,7 @@ class TestBuildKpiGeneratePrompt:
         assert "fewer" in prompt.lower()
 
 
-# ── OpenAILLMClient._cluster_tables_into_domains ──────────────────────────────
+# ── PortkeyLLMClient._cluster_tables_into_domains ─────────────────────────────
 
 
 def _valid_cluster_json(domains: list[dict] | None = None) -> str:
@@ -244,7 +244,7 @@ def _valid_cluster_json(domains: list[dict] | None = None) -> str:
     return json.dumps({"domains": domains})
 
 
-class TestOpenAIClusterTablesIntoDomains:
+class TestPortkeyClusterTablesIntoDomains:
     async def test_returns_parsed_clusters(self):
         client = _make_client()
         client._client.chat.completions.create = AsyncMock(return_value=_mock_response(_valid_cluster_json()))
@@ -304,7 +304,7 @@ class TestOpenAIClusterTablesIntoDomains:
         assert "user" in roles
 
 
-# ── OpenAILLMClient._generate_domain_kpis ────────────────────────────────────
+# ── PortkeyLLMClient._generate_domain_kpis ────────────────────────────────────
 
 
 def _valid_kpi_json(kpis: list[dict] | None = None) -> str:
@@ -326,7 +326,7 @@ def _valid_kpi_json(kpis: list[dict] | None = None) -> str:
     return json.dumps({"kpis": kpis})
 
 
-class TestOpenAIGenerateDomainKpis:
+class TestPortkeyGenerateDomainKpis:
     async def test_returns_parsed_kpi_terms(self):
         client = _make_client()
         client._client.chat.completions.create = AsyncMock(return_value=_mock_response(_valid_kpi_json()))
@@ -402,7 +402,7 @@ class TestOpenAIGenerateDomainKpis:
         assert "orders.hallucinated_col" not in kpis[0].linked_columns
 
 
-# ── OpenAILLMClient._synthesize_kpis ─────────────────────────────────────────
+# ── PortkeyLLMClient._synthesize_kpis ─────────────────────────────────────────
 
 
 def _valid_synthesis_json(kpis: list[dict] | None = None) -> str:
