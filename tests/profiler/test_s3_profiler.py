@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from core.api.v1.schemas.profiler import ProfilingConfig, ProfilingResponse
 from core.api.v1.schemas.s3 import S3ConnectionConfig, S3FileProfilingRequest, S3PathConfig
+from core.exceptions.base import ExternalServiceError
 from core.services.s3.profiler import (
     S3FileProfilerService,
     _build_read_expression,
@@ -23,6 +24,7 @@ from core.services.s3.profiler import (
     _esc,
     _esc_sql_string,
     _make_json_safe,
+    _resolve_aws_credentials,
 )
 
 # ── Helper factories ────────────────────────────────────────────────────────────
@@ -695,3 +697,92 @@ class TestColumnStatsIntegration:
 
         assert classify_column_type("INTEGER") == ColumnTypeCategory.NUMERIC
         assert classify_column_type("VARCHAR") == ColumnTypeCategory.STRING
+
+
+# ── _resolve_aws_credentials ─────────────────────────────────────────────────
+
+
+class TestResolveAwsCredentials:
+    """Tests for _resolve_aws_credentials — credential resolution helper."""
+
+    def _make_conn_explicit(self, token: str | None = None) -> S3ConnectionConfig:
+        kwargs: dict = {"aws_access_key_id": "AKIDEXPLICIT", "aws_secret_access_key": "SECRETEXPLICIT"}
+        if token is not None:
+            kwargs["aws_session_token"] = token
+        return S3ConnectionConfig(**kwargs)
+
+    def _make_conn_no_creds(self) -> S3ConnectionConfig:
+        return S3ConnectionConfig(aws_access_key_id=None, aws_secret_access_key=None)
+
+    # ── Explicit credentials fast path ────────────────────────────────────────
+
+    def test_explicit_credentials_bypass_boto3(self):
+        conn_cfg = self._make_conn_explicit()
+        with patch("core.services.s3.profiler.boto3", create=True) as mock_boto3:
+            result = _resolve_aws_credentials(conn_cfg)
+        mock_boto3.Session.assert_not_called()
+        assert result == ("AKIDEXPLICIT", "SECRETEXPLICIT", "")
+
+    def test_explicit_credentials_with_session_token(self):
+        conn_cfg = self._make_conn_explicit(token="STS_TOKEN")
+        result = _resolve_aws_credentials(conn_cfg)
+        assert result == ("AKIDEXPLICIT", "SECRETEXPLICIT", "STS_TOKEN")
+
+    def test_explicit_credentials_no_session_token(self):
+        conn_cfg = self._make_conn_explicit(token=None)
+        result = _resolve_aws_credentials(conn_cfg)
+        assert result[2] == ""
+
+    # ── boto3 provider chain (IAM role / ECS task role) ───────────────────────
+
+    def _frozen_creds(self, access_key: str, secret_key: str, token: str | None):
+        from collections import namedtuple
+
+        ReadOnly = namedtuple("ReadOnlyCredentials", ["access_key", "secret_key", "token"])
+        frozen = ReadOnly(access_key=access_key, secret_key=secret_key, token=token)
+        mock_creds = MagicMock()
+        mock_creds.get_frozen_credentials.return_value = frozen
+        return mock_creds
+
+    def test_iam_role_resolved_via_boto3(self):
+        conn_cfg = self._make_conn_no_creds()
+        mock_creds = self._frozen_creds("IAM_KEY", "IAM_SECRET", None)
+        with patch("boto3.Session") as mock_session_cls:
+            mock_session_cls.return_value.get_credentials.return_value = mock_creds
+            result = _resolve_aws_credentials(conn_cfg)
+        assert result == ("IAM_KEY", "IAM_SECRET", "")
+
+    def test_ecs_task_role_session_token_returned(self):
+        conn_cfg = self._make_conn_no_creds()
+        mock_creds = self._frozen_creds("ECS_KEY", "ECS_SECRET", "ECS_SESSION_TOKEN")
+        with patch("boto3.Session") as mock_session_cls:
+            mock_session_cls.return_value.get_credentials.return_value = mock_creds
+            result = _resolve_aws_credentials(conn_cfg)
+        assert result == ("ECS_KEY", "ECS_SECRET", "ECS_SESSION_TOKEN")
+
+    def test_no_credentials_raises_external_service_error(self):
+        conn_cfg = self._make_conn_no_creds()
+        with patch("boto3.Session") as mock_session_cls:
+            mock_session_cls.return_value.get_credentials.return_value = None
+            with pytest.raises(ExternalServiceError, match="No AWS credentials could be resolved"):
+                _resolve_aws_credentials(conn_cfg)
+
+    def test_botocore_no_credentials_error_raises_external_service_error(self):
+        from botocore.exceptions import NoCredentialsError
+
+        conn_cfg = self._make_conn_no_creds()
+        with patch("boto3.Session") as mock_session_cls:
+            mock_session_cls.return_value.get_credentials.side_effect = NoCredentialsError()
+            with pytest.raises(ExternalServiceError, match="AWS credential resolution failed"):
+                _resolve_aws_credentials(conn_cfg)
+
+    def test_botocore_partial_credentials_error_raises_external_service_error(self):
+        from botocore.exceptions import PartialCredentialsError
+
+        conn_cfg = self._make_conn_no_creds()
+        with patch("boto3.Session") as mock_session_cls:
+            mock_session_cls.return_value.get_credentials.side_effect = PartialCredentialsError(
+                provider="env", cred_var="aws_secret_access_key"
+            )
+            with pytest.raises(ExternalServiceError, match="AWS credential resolution failed"):
+                _resolve_aws_credentials(conn_cfg)

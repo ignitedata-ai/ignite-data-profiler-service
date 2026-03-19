@@ -153,13 +153,69 @@ def _derive_table_name(path_cfg: S3PathConfig) -> str:
 # ── DuckDB session setup ──────────────────────────────────────────────────────
 
 
+def _resolve_aws_credentials(conn_cfg: S3ConnectionConfig) -> tuple[str, str, str]:
+    """Resolve AWS credentials, returning (access_key_id, secret_access_key, session_token).
+
+    If explicit credentials are present in conn_cfg, returns them directly.
+    Otherwise delegates to boto3's provider chain, which supports ECS task roles,
+    EC2 instance roles, env vars, ~/.aws/credentials, etc.
+
+    DuckDB's httpfs does not support the ECS container metadata endpoint
+    (``AWS_CONTAINER_CREDENTIALS_RELATIVE_URI``), so credentials must always be
+    resolved and passed explicitly.
+
+    Returns session_token as ``""`` when not applicable.
+    Raises :class:`ExternalServiceError` if no credentials can be resolved.
+    """
+    if conn_cfg.aws_access_key_id and conn_cfg.aws_secret_access_key:
+        return (
+            conn_cfg.aws_access_key_id,
+            conn_cfg.aws_secret_access_key.get_secret_value(),
+            conn_cfg.aws_session_token.get_secret_value() if conn_cfg.aws_session_token else "",
+        )
+
+    import boto3  # local import — only needed for the IAM role / env-var path
+    from botocore.exceptions import NoCredentialsError, PartialCredentialsError
+
+    try:
+        session = boto3.Session(region_name=conn_cfg.aws_region)
+        creds = session.get_credentials()
+        if creds is None:
+            raise ExternalServiceError(
+                message=(
+                    "No AWS credentials could be resolved. Provide aws_access_key_id/"
+                    "aws_secret_access_key, set AWS environment variables, or attach an IAM role."
+                ),
+                service_name="AWS S3",
+            )
+        frozen = creds.get_frozen_credentials()
+        return (
+            frozen.access_key,
+            frozen.secret_key,
+            frozen.token or "",
+        )
+    except (NoCredentialsError, PartialCredentialsError) as exc:
+        raise ExternalServiceError(
+            message=f"AWS credential resolution failed: {exc}",
+            service_name="AWS S3",
+        ) from exc
+    except ExternalServiceError:
+        raise
+    except Exception as exc:
+        raise ExternalServiceError(
+            message=f"Unexpected error resolving AWS credentials: {exc}",
+            service_name="AWS S3",
+        ) from exc
+
+
 def _setup_duckdb_s3_session(conn: duckdb.DuckDBPyConnection, conn_cfg: S3ConnectionConfig) -> None:
     """Install and load httpfs, then configure S3 credentials for the session.
 
-    When ``aws_access_key_id`` is ``None``, DuckDB's httpfs falls back to
-    ``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY`` environment variables and
-    the EC2 instance metadata service (IAM role). Do not set empty strings —
-    that would override the credential chain with blank values.
+    Credentials are always resolved explicitly via boto3's provider chain so
+    that DuckDB receives concrete credentials regardless of their source
+    (explicit keys, env vars, ECS task role, EC2 instance role, etc.).
+    DuckDB's own credential discovery is bypassed because httpfs does not
+    support the ECS container metadata endpoint provider.
     """
     conn.execute("INSTALL httpfs")
     conn.execute("LOAD httpfs")
@@ -167,17 +223,11 @@ def _setup_duckdb_s3_session(conn: duckdb.DuckDBPyConnection, conn_cfg: S3Connec
     region = _esc_sql_string(conn_cfg.aws_region)
     conn.execute(f"SET s3_region='{region}'")
 
-    if conn_cfg.aws_access_key_id:
-        key_id = _esc_sql_string(conn_cfg.aws_access_key_id)
-        conn.execute(f"SET s3_access_key_id='{key_id}'")
-
-    if conn_cfg.aws_secret_access_key:
-        secret = _esc_sql_string(conn_cfg.aws_secret_access_key.get_secret_value())
-        conn.execute(f"SET s3_secret_access_key='{secret}'")
-
-    if conn_cfg.aws_session_token:
-        token = _esc_sql_string(conn_cfg.aws_session_token.get_secret_value())
-        conn.execute(f"SET s3_session_token='{token}'")
+    key_id, secret, token = _resolve_aws_credentials(conn_cfg)
+    conn.execute(f"SET s3_access_key_id='{_esc_sql_string(key_id)}'")
+    conn.execute(f"SET s3_secret_access_key='{_esc_sql_string(secret)}'")
+    if token:
+        conn.execute(f"SET s3_session_token='{_esc_sql_string(token)}'")
 
     if conn_cfg.endpoint_url:
         # DuckDB expects the endpoint without scheme (host:port only).
