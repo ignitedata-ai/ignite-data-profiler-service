@@ -172,7 +172,7 @@ def configure_logging() -> None:
         renderer = structlog.processors.JSONRenderer()
     else:
         # Human-readable formatter for development
-        renderer = structlog.dev.ConsoleRenderer(colors=settings.ENVIRONMENT == "development")
+        renderer = structlog.dev.ConsoleRenderer(colors=sys.stdout.isatty() and settings.ENVIRONMENT == "development")
 
     # Configure structlog
     structlog.configure(
