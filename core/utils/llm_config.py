@@ -26,6 +26,7 @@ Usage::
 from __future__ import annotations
 
 import re
+import time
 from contextvars import ContextVar
 from typing import Any
 
@@ -78,6 +79,10 @@ _ACCUMULATOR_ZERO: dict[str, float] = {
 }
 _llm_cost_accumulator: ContextVar[dict[str, float] | None] = ContextVar(
     "_llm_cost_accumulator",
+    default=None,
+)
+_profiling_start_time: ContextVar[float | None] = ContextVar(
+    "_profiling_start_time",
     default=None,
 )
 
@@ -133,9 +138,11 @@ def reset_cost_accumulator() -> None:
     """Reset the per-task LLM cost accumulator to zero.
 
     Call this at the start of each profiling run so that accumulated costs
-    reflect only the current request.
+    reflect only the current request.  Also records the wall-clock start time
+    used to compute ``total_latency_ms`` as actual elapsed time.
     """
     _llm_cost_accumulator.set(dict(_ACCUMULATOR_ZERO))
+    _profiling_start_time.set(time.monotonic())
 
 
 def get_accumulated_cost() -> float:
@@ -147,9 +154,17 @@ def get_accumulated_stats() -> dict[str, float]:
     """Return a snapshot of all accumulated LLM usage stats for the current task.
 
     Keys: ``input_tokens``, ``output_tokens``, ``input_cost``, ``output_cost``,
-    ``total_cost``.
+    ``total_cost``, ``total_latency_ms``.
+
+    ``total_latency_ms`` is the actual wall-clock elapsed time since
+    :func:`reset_cost_accumulator` was called, so parallel LLM calls are not
+    double-counted.
     """
-    return dict(_get_accumulator())
+    snapshot = dict(_get_accumulator())
+    start = _profiling_start_time.get()
+    if start is not None:
+        snapshot["total_latency_ms"] = (time.monotonic() - start) * 1000.0
+    return snapshot
 
 
 async def get_llm_response(
@@ -222,11 +237,8 @@ async def get_llm_response(
         _tracker = _get_lat()
         if _tracker is not None:
             try:
-                async with llm_track_latency(_tracker, provider=provider, model=model) as _lat_ctx:
+                async with llm_track_latency(_tracker, provider=provider, model=model):
                     response = await client.chat.completions.create(**kwargs)
-                _result = _lat_ctx.result
-                if _result is not None:
-                    _get_accumulator()["total_latency_ms"] += _result.total_ms
             except Exception as _lat_exc:
                 logger.warning("Latency tracking failed — falling back to untracked call", error=str(_lat_exc))
                 response = await client.chat.completions.create(**kwargs)
