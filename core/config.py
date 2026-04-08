@@ -118,9 +118,9 @@ class Settings(BaseSettings):
 
     # Task Management
     MAX_CONCURRENT_PROFILE_TASKS: int = Field(
-        default=3,
+        default=20,
         ge=1,
-        le=20,
+        le=30,
     )
     TASK_RETENTION_HOURS: int = Field(
         default=24,
