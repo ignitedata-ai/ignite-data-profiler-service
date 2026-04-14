@@ -36,7 +36,7 @@ jobs:
       id: codeartifact
       run: |
         TOKEN=$(aws codeartifact get-authorization-token \
-          --domain aws-ilens-dev \
+          --domain aws-ilens-demo \
           --domain-owner 716695577700 \
           --region us-east-1 \
           --query authorizationToken \
@@ -60,7 +60,7 @@ jobs:
         docker tag ${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} $IMAGE_URI:${IMAGE_TAG}
         docker push --all-tags $IMAGE_URI
 
-  Demo:
+  Dev:
     uses: ./.github/workflows/env_template.yml
     needs: Build
     if: success()
