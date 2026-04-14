@@ -56,7 +56,6 @@ jobs:
         echo "The image tag to be used is ${IMAGE_TAG}"
         docker buildx build --platform linux/arm64 --load \
           --build-arg AWS_CODEARTIFACT_TOKEN=${{ steps.codeartifact.outputs.token }} \
-          --build-arg CODEARTIFACT_INDEX_URL="https://aws-ilens-demo-716695577700.d.codeartifact.us-east-1.amazonaws.com/pypi/aws-ilens-demo-repo/simple" \
           -t ${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} .
         docker tag ${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} $IMAGE_URI:${IMAGE_TAG}
         docker push --all-tags $IMAGE_URI

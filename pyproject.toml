@@ -3,7 +3,7 @@ name = "ignite-data-profiler-service"
 version = "0.1.0"
 description = "A data profiling service for analyzing and summarizing dataset characteristics"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "alembic>=1.16.4",
     "asyncpg>=0.30.0",
@@ -46,22 +46,17 @@ dependencies = [
     "portkey-ai>=1.0.0",
     "duckdb>=1.4.4",
     "ignite-data-connectors",
-    "ignite-llmops-lib-cost-tracker==0.2.0",
-    "ignite-llmops-lib-token-counter==0.2.0",
-    "ignite-llmops-lib-latency-tracker==0.2.0",
     "boto3>=1.42.67",
+    "ignite-llmops-lib-cost-tracker",
+    "ignite-llmops-lib-latency-tracker",
+    "ignite-llmops-lib-token-counter",
 ]
-
-[[tool.uv.index]]
-name = "codeartifact"
-url = "${CODEARTIFACT_INDEX_URL}"
-explicit = true
 
 [tool.uv.sources]
 ignite-data-connectors = { path = "libs/ignite_data_connectors-0.3.0-py3-none-any.whl" }
-ignite-llmops-lib-cost-tracker = { index = "codeartifact" }
-ignite-llmops-lib-token-counter = { index = "codeartifact" }
-ignite-llmops-lib-latency-tracker = { index = "codeartifact" }
+ignite-llmops-lib-cost-tracker = { path = "libs/ignite_llmops_lib_cost_tracker-0.2.0-py3-none-any.whl" }
+ignite-llmops-lib-latency-tracker = { path = "libs/ignite_llmops_lib_latency_tracker-0.2.0-py3-none-any.whl" }
+ignite-llmops-lib-token-counter = { path = "libs/ignite_llmops_lib_token_counter-0.2.0-py3-none-any.whl" }
 
 [dependency-groups]
 dev = [
