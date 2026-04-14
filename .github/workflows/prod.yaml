@@ -1,12 +1,12 @@
-name: CI/CD pipeline for Ignite Lens User Service
+name: CI/CD pipeline for Ignite Lens Profile Service
 
 on:
   push:
     branches:
-      - "release/*"
+      - 'release/*'
 
 permissions:
-  id-token: write # Required for OIDC
+  id-token: write   # Required for OIDC
   contents: read
 
 jobs:
@@ -19,33 +19,46 @@ jobs:
       ECR_REPOSITORY: profile
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+    - name: Checkout source
+      uses: actions/checkout@v4
 
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::985016623778:role/aws-ilens-prod-github-actions-role
-          aws-region: ${{ env.AWS_REGION }}
+    - name: Configure AWS credentials via OIDC
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::985016623778:role/aws-ilens-prod-github-actions-role
+        aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+    - name: Get CodeArtifact token
+      id: codeartifact
+      run: |
+        TOKEN=$(aws codeartifact get-authorization-token \
+          --domain aws-ilens-prod \
+          --domain-owner 985016623778 \
+          --region us-east-1 \
+          --query authorizationToken \
+          --output text)
+        echo "token=$TOKEN" >> $GITHUB_OUTPUT
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
 
-      - name: Building Docker image
-        run: |
-          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT }}-${{ env.ECR_REPOSITORY }}"
-          IMAGE_TAG=$(git rev-parse --short ${{ github.sha }})
-          echo "The image tag to be used is ${IMAGE_TAG}"
-          docker buildx build --platform linux/arm64 --load -t ${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} .
-          docker tag ${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} $IMAGE_URI:${IMAGE_TAG}
-          docker push --all-tags $IMAGE_URI
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Building Docker image
+      run: |
+        IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT }}-${{ env.ECR_REPOSITORY }}"
+        IMAGE_TAG=$(git rev-parse --short ${{ github.sha }})
+        echo "The image tag to be used is ${IMAGE_TAG}"
+        docker buildx build --platform linux/arm64 --load \
+          --build-arg AWS_CODEARTIFACT_TOKEN=${{ steps.codeartifact.outputs.token }} \
+          -t ${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} .
+        docker tag ${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} $IMAGE_URI:${IMAGE_TAG}
+        docker push --all-tags $IMAGE_URI
 
   Prod:
     uses: ./.github/workflows/env_template.yml
