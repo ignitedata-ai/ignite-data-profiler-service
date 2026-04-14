@@ -36,7 +36,7 @@ jobs:
       id: codeartifact
       run: |
         TOKEN=$(aws codeartifact get-authorization-token \
-          --domain aws-ilens-dev \
+          --domain aws-ilens-demo \
           --domain-owner 716695577700 \
           --region us-east-1 \
           --query authorizationToken \
