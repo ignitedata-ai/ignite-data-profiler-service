@@ -60,7 +60,7 @@ jobs:
         docker tag ${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} $IMAGE_URI:${IMAGE_TAG}
         docker push --all-tags $IMAGE_URI
 
-  Dev:
+  Demo:
     uses: ./.github/workflows/env_template.yml
     needs: Build
     if: success()
