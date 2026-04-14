@@ -16,7 +16,7 @@ jobs:
     env:
       AWS_REGION: us-east-1
       PROJECT: ilens
-      ECR_REPOSITORY: user
+      ECR_REPOSITORY: profile
 
     steps:
       - name: Checkout source
@@ -56,5 +56,4 @@ jobs:
       AWS_REGION: us-east-1
       ENVIRONMENT: prod
       PROJECT: ilens
-      ECR_REPOSITORY: user
-      SERVICE: user
+      ECR_REPOSITORY: profile
