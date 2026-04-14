@@ -22,7 +22,7 @@ WORKDIR /app
 
 # Accept AWS CodeArtifact token for installing private packages
 ARG AWS_CODEARTIFACT_TOKEN
-
+ARG CODEARTIFACT_INDEX_URL
 # Install dependencies first (cached layer)
 COPY pyproject.toml uv.lock ./
 COPY libs/ libs/
