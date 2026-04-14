@@ -54,7 +54,7 @@ dependencies = [
 
 [[tool.uv.index]]
 name = "codeartifact"
-url = "https://aws-ilens-dev-716695577700.d.codeartifact.us-east-1.amazonaws.com/pypi/aws-ilens-dev-repo/simple"
+url = "${CODEARTIFACT_INDEX_URL}"
 explicit = true
 
 [tool.uv.sources]

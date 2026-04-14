@@ -53,6 +53,7 @@ jobs:
       run: |
         IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT }}-${{ env.ECR_REPOSITORY }}"
         IMAGE_TAG=$(git rev-parse --short ${{ github.sha }})
+        export CODEARTIFACT_INDEX_URL="https://aws-ilens-prod-985016623778.d.codeartifact.us-east-1.amazonaws.com/pypi/aws-ilens-prod-repo/simple"
         echo "The image tag to be used is ${IMAGE_TAG}"
         docker buildx build --platform linux/arm64 --load \
           --build-arg AWS_CODEARTIFACT_TOKEN=${{ steps.codeartifact.outputs.token }} \
