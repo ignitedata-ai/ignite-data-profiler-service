@@ -28,6 +28,7 @@ COPY pyproject.toml uv.lock ./
 COPY libs/ libs/
 RUN UV_INDEX_CODEARTIFACT_USERNAME=aws \
     UV_INDEX_CODEARTIFACT_PASSWORD=${AWS_CODEARTIFACT_TOKEN} \
+    UV_EXTRA_INDEX_URL=${CODEARTIFACT_INDEX_URL} \
     uv pip install --system .
 
 # ---------- production stage ----------
