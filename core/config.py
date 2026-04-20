@@ -33,7 +33,9 @@ class Settings(BaseSettings):
     PORT: int = Field(default=8004)
 
     # Database
-    DATABASE_URL: str = Field(default="sqlite+aiosqlite:///./profiler.db")
+    DATABASE_URL: str = Field(
+        default="postgresql+asyncpg://profiler_userr:profiler_password@localhost:5432/lens_profiler_service"
+    )
     DATABASE_ECHO: bool = Field(default=False)
     DATABASE_POOL_SIZE: int = Field(default=10)
     DATABASE_MAX_OVERFLOW: int = Field(default=5)
