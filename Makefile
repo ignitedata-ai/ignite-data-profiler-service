@@ -5,6 +5,7 @@
 # Default target
 help:
 	@echo "Available commands:"
+	@echo "  dev-setup   - Initial setup for new developers (install deps, hooks, DB)"
 	@echo "  install     - Install dependencies"
 	@echo "  dev         - Run development server"
 	@echo "  test        - Run tests"
@@ -20,6 +21,21 @@ help:
 	@echo "  migrate     - Run database migrations"
 	@echo "  init-db     - Initialize database with seed data"
 	@echo "  check       - Run all quality checks"
+
+dev-setup:
+	@echo "🚀 Setting up development environment..."
+	@echo ""
+	@echo "📦 Step 1/4: Installing dependencies..."
+	uv sync --frozen --no-cache
+	@echo ""
+	@echo "🪝 Step 2/4: Installing pre-commit hooks..."
+	uv run pre-commit install
+	@echo ""
+	@echo "🗄️  Step 3/4: Running database migrations..."
+	uv run alembic upgrade head
+	@echo ""
+	@echo "✅ Development environment ready!"
+	@echo "You can now run 'make dev' to start the development server."
 
 install:
 	uv sync --frozen --no-cache
