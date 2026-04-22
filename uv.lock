@@ -1014,7 +1014,7 @@ dependencies = [
     { name = "snowflake-connector-python" },
 ]
 wheels = [
-    { filename = "ignite_data_connectors-0.3.0-py3-none-any.whl", hash = "sha256:801ffff15ba467eb809667f516f4446a8a9cf6d2e7f9badbe6f16e147d00403b" },
+    { filename = "ignite_data_connectors-0.3.0-py3-none-any.whl", hash = "sha256:7638ed79e62792d71e40944826489f3192210e8e9b8b5c213bf9f2511fb0a065" },
 ]
 
 [package.metadata]
