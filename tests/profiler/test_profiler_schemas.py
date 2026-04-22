@@ -109,3 +109,64 @@ class TestProfilingRequest:
                     "connection": self._base_conn,
                 }
             )
+
+
+class TestPostgresSSHTunnel:
+    _base_conn = dict(host="db.internal", database="mydb", username="dbuser", password="dbpassword")
+    _base_tunnel = dict(host="54.1.2.3", username="ec2-user")
+
+    def test_private_key_auth_accepted(self):
+        req = PostgresProfilingRequest(
+            datasource_type="postgres",
+            connection={
+                **self._base_conn,
+                "ssh_tunnel": {
+                    **self._base_tunnel,
+                    "private_key": "-----BEGIN RSA PRIVATE KEY-----\nMIIEo...\n-----END RSA PRIVATE KEY-----",
+                },
+            },
+        )
+        assert req.connection.ssh_tunnel is not None
+        assert req.connection.ssh_tunnel.host == "54.1.2.3"
+        assert req.connection.ssh_tunnel.username == "ec2-user"
+        assert req.connection.ssh_tunnel.private_key is not None
+        assert req.connection.ssh_tunnel.password is None
+
+    def test_password_auth_accepted(self):
+        req = PostgresProfilingRequest(
+            datasource_type="postgres",
+            connection={
+                **self._base_conn,
+                "ssh_tunnel": {**self._base_tunnel, "password": "sshpassword"},
+            },
+        )
+        assert req.connection.ssh_tunnel is not None
+        assert req.connection.ssh_tunnel.password is not None
+        assert req.connection.ssh_tunnel.private_key is None
+
+    def test_no_tunnel_still_works(self):
+        req = PostgresProfilingRequest(
+            datasource_type="postgres",
+            connection=self._base_conn,
+        )
+        assert req.connection.ssh_tunnel is None
+
+    def test_custom_local_bind_port_accepted(self):
+        req = PostgresProfilingRequest(
+            datasource_type="postgres",
+            connection={
+                **self._base_conn,
+                "ssh_tunnel": {**self._base_tunnel, "password": "p", "local_bind_port": 15432},
+            },
+        )
+        assert req.connection.ssh_tunnel.local_bind_port == 15432
+
+    def test_non_default_ssh_port_accepted(self):
+        req = PostgresProfilingRequest(
+            datasource_type="postgres",
+            connection={
+                **self._base_conn,
+                "ssh_tunnel": {**self._base_tunnel, "port": 2222, "password": "p"},
+            },
+        )
+        assert req.connection.ssh_tunnel.port == 2222
