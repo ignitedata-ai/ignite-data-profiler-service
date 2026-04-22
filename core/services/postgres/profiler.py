@@ -55,19 +55,19 @@ def _make_json_safe(value: Any) -> Any:
     """
     if value is None:
         return None
-    if isinstance(value, (str, int, float, bool)):
+    if isinstance(value, (str | int | float | bool)):
         return value
     if isinstance(value, Decimal):
         return float(value)
-    if isinstance(value, (datetime, date, time)):
+    if isinstance(value, (datetime | date | time)):
         return value.isoformat()
     if isinstance(value, UUID):
         return str(value)
     if isinstance(value, memoryview):
         return bytes(value).hex()
-    if isinstance(value, (bytes, bytearray)):
+    if isinstance(value, (bytes | bytearray)):
         return value.hex()
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, (list | tuple)):
         return [_make_json_safe(v) for v in value]
     if isinstance(value, dict):
         return {k: _make_json_safe(v) for k, v in value.items()}
@@ -715,20 +715,29 @@ class PostgresProfilerService(BaseProfilerService):
     _datasource_type = "postgres"
 
     def _span_attributes(self, conn: PostgresConfig) -> dict[str, str | int]:
-        return {
+        attrs: dict[str, str | int] = {
             "db.system": "postgresql",
             "db.name": conn.database,
             "net.peer.name": conn.host,
             "net.peer.port": conn.port,
         }
+        if conn.ssh_tunnel is not None:
+            attrs["net.ssh_tunnel.host"] = conn.ssh_tunnel.host
+            attrs["net.ssh_tunnel.port"] = conn.ssh_tunnel.port
+        return attrs
 
     def _log_context(self, conn: PostgresConfig) -> dict[str, Any]:
-        return {
+        ctx: dict[str, Any] = {
             "host": conn.host,
             "port": conn.port,
             "database": conn.database,
             "username": conn.username,
         }
+        if conn.ssh_tunnel is not None:
+            ctx["ssh_tunnel_host"] = conn.ssh_tunnel.host
+            ctx["ssh_tunnel_port"] = conn.ssh_tunnel.port
+            ctx["ssh_tunnel_username"] = conn.ssh_tunnel.username
+        return ctx
 
     async def _run(
         self,

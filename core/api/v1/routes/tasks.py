@@ -56,7 +56,7 @@ async def create_profiling_task(
         or getattr(conn, "project", None)
         or (body.paths[0].bucket if hasattr(body, "paths") and body.paths else "s3"),  # type: ignore
     )
-
+    print(body, "#" * 30)
     task = await task_manager.create_task(body)
     return TaskCreateResponse(
         task_id=task.id,
