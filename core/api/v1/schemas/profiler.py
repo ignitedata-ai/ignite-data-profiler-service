@@ -3,10 +3,155 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from typing import Annotated, Any, Literal
 
 from ignite_data_connectors import BigQueryConfig, DatabricksConfig, MySQLConfig, PostgresConfig, RedshiftConfig, SnowflakeConfig
 from pydantic import BaseModel, ConfigDict, Field
+
+# ── PII/PHI Sensitivity Classification ─────────────────────────────────────────
+
+
+class SensitivityLevel(str, Enum):
+    """Risk severity level for a sensitive column.
+
+    Levels are assigned deterministically from the sensitivity type — the LLM
+    does not choose them.
+
+    LOW      – Marginally sensitive; only a risk when combined with other PII.
+    MEDIUM   – Moderately sensitive; can identify or profile individuals.
+    HIGH     – Highly sensitive; direct regulatory or reputational exposure.
+    CRITICAL – Maximum sensitivity; breach carries severe legal consequences.
+    """
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class SensitivityType(str, Enum):
+    """PII/PHI sensitivity classification types.
+
+    Covers HIPAA Safe Harbor 18 identifiers and extended PII/PHI categories.
+    """
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # HIPAA Safe Harbor 18 Identifiers
+    # ═══════════════════════════════════════════════════════════════════════════
+    NAME = "name"  # Personal names (first, last, full)
+    ADDRESS = "address"  # Street address, geographic data
+    DATE = "date"  # Birth date, admission/discharge/death dates
+    PHONE_NUMBER = "phone_number"  # Telephone and fax numbers
+    EMAIL = "email"  # Email addresses
+    SSN = "ssn"  # Social Security Numbers
+    MEDICAL_RECORD_NUMBER = "medical_record_number"  # Medical record numbers
+    HEALTH_PLAN_ID = "health_plan_id"  # Health plan beneficiary numbers
+    ACCOUNT_NUMBER = "account_number"  # Financial account numbers
+    LICENSE_NUMBER = "license_number"  # Certificate/license numbers
+    VEHICLE_ID = "vehicle_id"  # VIN, license plates
+    DEVICE_ID = "device_id"  # Device identifiers/serial numbers
+    WEB_URL = "web_url"  # Personal web URLs
+    IP_ADDRESS = "ip_address"  # IP addresses
+    BIOMETRIC = "biometric"  # Fingerprints, voice prints, retinal scans
+    PHOTO = "photo"  # Full-face photos, comparable images
+    AGE_OVER_89 = "age_over_89"  # Ages over 89
+    OTHER_UNIQUE_ID = "other_unique_id"  # Any other unique identifying number
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Extended PII Types
+    # ═══════════════════════════════════════════════════════════════════════════
+    CREDIT_CARD = "credit_card"  # Credit/debit card numbers
+    PASSPORT = "passport"  # Passport numbers
+    NATIONAL_ID = "national_id"  # National ID numbers (non-US SSN)
+    BANK_ROUTING = "bank_routing"  # Bank routing numbers
+    TAX_ID = "tax_id"  # Tax identification numbers (EIN, ITIN)
+    DRIVERS_LICENSE = "drivers_license"  # Driver's license numbers
+    INSURANCE_POLICY = "insurance_policy"  # Insurance policy numbers
+    EMPLOYEE_ID = "employee_id"  # Employee identification numbers
+    CUSTOMER_ID = "customer_id"  # Customer IDs (when PII-linked)
+    LOGIN_CREDENTIAL = "login_credential"  # Usernames, passwords, PINs
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PHI (Protected Health Information)
+    # ═══════════════════════════════════════════════════════════════════════════
+    DIAGNOSIS_CODE = "diagnosis_code"  # ICD codes, diagnoses
+    PROCEDURE_CODE = "procedure_code"  # CPT codes, procedures
+    MEDICATION = "medication"  # Medication names, prescriptions
+    LAB_RESULT = "lab_result"  # Laboratory test results
+    VITAL_SIGN = "vital_sign"  # Blood pressure, heart rate, etc.
+    GENETIC_DATA = "genetic_data"  # Genetic/genomic information
+    MENTAL_HEALTH = "mental_health"  # Mental health information
+    SUBSTANCE_ABUSE = "substance_abuse"  # Substance abuse treatment records
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Other Sensitive Categories
+    # ═══════════════════════════════════════════════════════════════════════════
+    FINANCIAL_DATA = "financial_data"  # Salary, income, financial records
+    ETHNICITY = "ethnicity"  # Race/ethnicity
+    GENDER = "gender"  # Gender identity or biological sex
+    RELIGION = "religion"  # Religious affiliation
+    SEXUAL_ORIENTATION = "sexual_orientation"  # Sexual orientation
+    POLITICAL_AFFILIATION = "political_affiliation"  # Political affiliation
+    CRIMINAL_RECORD = "criminal_record"  # Criminal history
+    GEOLOCATION = "geolocation"  # GPS coordinates, precise location
+    INTERNAL_METRICS = "internal_metrics"  # Internal business metrics that should not be exposed
+
+
+# Deterministic mapping from sensitivity type to risk level.
+# Used to populate sensitivity_level after LLM detection — the LLM never chooses the level.
+SENSITIVITY_LEVEL_MAP: dict[SensitivityType, SensitivityLevel] = {
+    # ── CRITICAL ────────────────────────────────────────────────────────────────
+    SensitivityType.SSN: SensitivityLevel.CRITICAL,
+    SensitivityType.MEDICAL_RECORD_NUMBER: SensitivityLevel.CRITICAL,
+    SensitivityType.BIOMETRIC: SensitivityLevel.CRITICAL,
+    SensitivityType.CREDIT_CARD: SensitivityLevel.CRITICAL,
+    SensitivityType.PASSPORT: SensitivityLevel.CRITICAL,
+    SensitivityType.NATIONAL_ID: SensitivityLevel.CRITICAL,
+    SensitivityType.LOGIN_CREDENTIAL: SensitivityLevel.CRITICAL,
+    SensitivityType.GENETIC_DATA: SensitivityLevel.CRITICAL,
+    SensitivityType.MENTAL_HEALTH: SensitivityLevel.CRITICAL,
+    SensitivityType.SUBSTANCE_ABUSE: SensitivityLevel.CRITICAL,
+    SensitivityType.SEXUAL_ORIENTATION: SensitivityLevel.CRITICAL,
+    # ── HIGH ────────────────────────────────────────────────────────────────────
+    SensitivityType.ADDRESS: SensitivityLevel.HIGH,
+    SensitivityType.DATE: SensitivityLevel.HIGH,
+    SensitivityType.PHONE_NUMBER: SensitivityLevel.HIGH,
+    SensitivityType.EMAIL: SensitivityLevel.HIGH,
+    SensitivityType.HEALTH_PLAN_ID: SensitivityLevel.HIGH,
+    SensitivityType.ACCOUNT_NUMBER: SensitivityLevel.HIGH,
+    SensitivityType.LICENSE_NUMBER: SensitivityLevel.HIGH,
+    SensitivityType.IP_ADDRESS: SensitivityLevel.HIGH,
+    SensitivityType.AGE_OVER_89: SensitivityLevel.HIGH,
+    SensitivityType.BANK_ROUTING: SensitivityLevel.HIGH,
+    SensitivityType.TAX_ID: SensitivityLevel.HIGH,
+    SensitivityType.DRIVERS_LICENSE: SensitivityLevel.HIGH,
+    SensitivityType.DIAGNOSIS_CODE: SensitivityLevel.HIGH,
+    SensitivityType.PROCEDURE_CODE: SensitivityLevel.HIGH,
+    SensitivityType.MEDICATION: SensitivityLevel.HIGH,
+    SensitivityType.LAB_RESULT: SensitivityLevel.HIGH,
+    SensitivityType.FINANCIAL_DATA: SensitivityLevel.HIGH,
+    SensitivityType.GEOLOCATION: SensitivityLevel.HIGH,
+    SensitivityType.ETHNICITY: SensitivityLevel.HIGH,
+    SensitivityType.GENDER: SensitivityLevel.MEDIUM,
+    SensitivityType.RELIGION: SensitivityLevel.HIGH,
+    SensitivityType.POLITICAL_AFFILIATION: SensitivityLevel.HIGH,
+    SensitivityType.CRIMINAL_RECORD: SensitivityLevel.HIGH,
+    # ── MEDIUM ──────────────────────────────────────────────────────────────────
+    SensitivityType.NAME: SensitivityLevel.MEDIUM,
+    SensitivityType.VEHICLE_ID: SensitivityLevel.MEDIUM,
+    SensitivityType.DEVICE_ID: SensitivityLevel.MEDIUM,
+    SensitivityType.WEB_URL: SensitivityLevel.MEDIUM,
+    SensitivityType.PHOTO: SensitivityLevel.MEDIUM,
+    SensitivityType.OTHER_UNIQUE_ID: SensitivityLevel.MEDIUM,
+    SensitivityType.INSURANCE_POLICY: SensitivityLevel.MEDIUM,
+    SensitivityType.VITAL_SIGN: SensitivityLevel.MEDIUM,
+    SensitivityType.INTERNAL_METRICS: SensitivityLevel.MEDIUM,
+    # ── LOW ─────────────────────────────────────────────────────────────────────
+    SensitivityType.EMPLOYEE_ID: SensitivityLevel.LOW,
+    SensitivityType.CUSTOMER_ID: SensitivityLevel.LOW,
+}
+
 
 # ── Connection / Request ───────────────────────────────────────────────────────
 
@@ -137,6 +282,20 @@ class ProfilingConfig(BaseModel):
             "Runs a multi-stage pipeline using schema signals and statistical heuristics. "
             "Best results when include_column_stats=True. Non-fatal."
         ),
+    )
+    detect_pii_phi: bool = Field(
+        default=True,
+        description=(
+            "Detect columns containing PII/PHI using LLM analysis. "
+            "Analyzes column names, data types, sample values, and descriptions. "
+            "Requires LLM_ENABLED=True server-side. Enabled by default. Non-fatal."
+        ),
+    )
+    llm_sensitivity_batch_size: int = Field(
+        default=20,
+        ge=1,
+        le=100,
+        description="Number of columns to analyze per LLM call for PII/PHI detection",
     )
 
     # ── Per-request LLM credentials (optional) ────────────────────────────────
@@ -352,6 +511,20 @@ class ColumnMetadata(BaseModel):
     enum_values: list[str] | None = None
     sample_values: list[Any] | None = None
     statistics: ColumnStatistics | None = None
+
+    # ── PII/PHI Sensitivity Fields ────────────────────────────────────────────
+    is_sensitive: bool = Field(
+        default=False,
+        description="Whether this column contains PII/PHI data as determined by LLM analysis",
+    )
+    sensitivity_type: SensitivityType | None = Field(
+        default=None,
+        description="The specific type of PII/PHI detected (e.g., email, ssn, medical_record_number)",
+    )
+    sensitivity_level: SensitivityLevel | None = Field(
+        default=None,
+        description="Risk severity level derived from sensitivity_type: low, medium, high, or critical",
+    )
 
 
 class IndexMetadata(BaseModel):

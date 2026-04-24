@@ -15,6 +15,7 @@ class TaskStatusEnum(str, Enum):
     PROFILING = "profiling"
     AUGMENTING = "augmenting"
     DETECTING_FILTERS = "detecting_filters"
+    DETECTING_SENSITIVITY = "detecting_sensitivity"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLING = "cancelling"
