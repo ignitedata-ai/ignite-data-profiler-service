@@ -242,6 +242,13 @@ class BaseProfilerService(ABC):
             response = await self._augment_kpis_response(response, cfg)
             _phase_log("LLM cost after KPI inference")
 
+        if cfg.detect_pii_phi:
+            if progress:
+                progress.update(phase="detecting_sensitivity", percent=95, detail={"augmentation_step": "pii_phi"})
+                await progress.flush()
+            response = await self._detect_sensitivity(response, cfg)
+            _phase_log("LLM cost after PII/PHI detection")
+
         if progress:
             progress.update(phase="completed", percent=100)
             await progress.flush()
@@ -498,10 +505,67 @@ class BaseProfilerService(ABC):
 
         return response
 
-    async def _detect_filter_columns(
+    async def _detect_sensitivity(
         self,
         response: ProfilingResponse,
         cfg: ProfilingConfig,
+    ) -> ProfilingResponse:
+        """Detect PII/PHI sensitivity for all columns via LLM.
+
+        Always a best-effort step: if the LLM client is not configured or
+        all calls fail, the original ``response`` is returned with columns
+        retaining their default ``is_sensitive=False``.
+        """
+        from core.llm import get_llm_client
+
+        llm = get_llm_client(
+            portkey_api_key=cfg.portkey_api_key,
+            portkey_virtual_key=cfg.portkey_virtual_key,
+        )
+        if llm is None:
+            logger.info("detect_pii_phi=True but no LLM client is configured; skipping")
+            return response
+
+        all_tables = [table for schema in response.schemas for table in schema.tables]
+
+        if not all_tables:
+            return response
+
+        total_columns = sum(len(t.columns) for t in all_tables)
+        logger.info(
+            "Starting PII/PHI sensitivity detection",
+            table_count=len(all_tables),
+            column_count=total_columns,
+            batch_size=cfg.llm_sensitivity_batch_size,
+            provider=llm.provider_name,
+        )
+
+        t_llm = time.monotonic()
+        try:
+            await llm.detect_sensitivity(all_tables, batch_size=cfg.llm_sensitivity_batch_size)
+        except Exception as exc:
+            logger.error(
+                "PII/PHI sensitivity detection encountered an unexpected error",
+                error=str(exc),
+                exc_info=True,
+            )
+        else:
+            sensitive_count = sum(
+                1 for t in all_tables for c in t.columns if c.is_sensitive
+            )
+            logger.info(
+                "PII/PHI sensitivity detection complete",
+                column_count=total_columns,
+                sensitive_column_count=sensitive_count,
+                llm_duration_seconds=round(time.monotonic() - t_llm, 3),
+            )
+
+        return response
+
+    async def _detect_filter_columns(
+        self,
+        response: ProfilingResponse,
+        _cfg: ProfilingConfig,
         connector: BaseConnector | None = None,
     ) -> ProfilingResponse:
         """Run the filter column detection pipeline.

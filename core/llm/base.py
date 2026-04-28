@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 
-from core.api.v1.schemas.profiler import ColumnMetadata, GlossaryTerm, KPITerm, TableMetadata
+from core.api.v1.schemas.profiler import SENSITIVITY_LEVEL_MAP, ColumnMetadata, GlossaryTerm, KPITerm, SensitivityType, TableMetadata
 from core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -160,6 +160,29 @@ class BaseLLMClient(ABC):
 
         Raises:
             Any exception: callers treat raised exceptions as soft failures.
+
+        """
+
+    @abstractmethod
+    async def _detect_column_sensitivity(
+        self,
+        table: TableMetadata,
+        columns: list[ColumnMetadata],
+    ) -> dict[str, tuple[bool, SensitivityType | None]]:
+        """Detect PII/PHI sensitivity for a batch of columns.
+
+        Args:
+            table: The parent table providing context for the columns.
+            columns: A batch of columns to analyze.
+
+        Returns:
+            A dict mapping column_name -> (is_sensitive, sensitivity_type).
+            Non-sensitive columns should have (False, None).
+            Unknown types should map to SensitivityType.OTHER_UNIQUE_ID.
+
+        Raises:
+            Any exception: callers treat raised exceptions as soft failures —
+            columns will retain their default is_sensitive=False.
 
         """
 
@@ -408,3 +431,65 @@ class BaseLLMClient(ABC):
             return []
 
         return all_domain_kpis
+
+    async def detect_sensitivity(
+        self,
+        tables: list[TableMetadata],
+        batch_size: int,
+    ) -> None:
+        """Detect PII/PHI sensitivity for all columns across tables.
+
+        Columns are processed in batches per table. Each batch is sent to
+        the LLM for analysis. Results are applied in-place to the column
+        objects (``is_sensitive`` and ``sensitivity_type`` fields).
+
+        Failures are caught per-batch and logged as warnings; they never
+        propagate to the caller. Failed columns retain ``is_sensitive=False``.
+
+        Args:
+            tables: Tables whose columns to analyze. Columns are modified
+                    in-place.
+            batch_size: Maximum number of columns per LLM call.
+
+        """
+        for table in tables:
+            if not table.columns:
+                continue
+
+            # Process columns in batches
+            for batch_start in range(0, len(table.columns), batch_size):
+                batch = table.columns[batch_start : batch_start + batch_size]
+                await self._detect_sensitivity_batch(table, batch)
+
+    async def _detect_sensitivity_batch(
+        self,
+        table: TableMetadata,
+        columns: list[ColumnMetadata],
+    ) -> None:
+        """Detect sensitivity for a single batch of columns, isolating errors."""
+        try:
+            results = await self._detect_column_sensitivity(table, columns)
+            # Apply results to columns in-place
+            for col in columns:
+                if col.name in results:
+                    is_sensitive, sensitivity_type = results[col.name]
+                    col.is_sensitive = is_sensitive
+                    col.sensitivity_type = sensitivity_type
+                    col.sensitivity_level = SENSITIVITY_LEVEL_MAP.get(sensitivity_type) if sensitivity_type else None
+
+            sensitive_count = sum(1 for col in columns if col.is_sensitive)
+            logger.debug(
+                "PII/PHI detection completed for batch",
+                provider=self.provider_name,
+                table=f"{table.schema_name}.{table.name}",
+                columns_analyzed=len(columns),
+                sensitive_found=sensitive_count,
+            )
+        except Exception as exc:
+            logger.warning(
+                "PII/PHI detection failed for batch",
+                provider=self.provider_name,
+                table=f"{table.schema_name}.{table.name}",
+                batch_size=len(columns),
+                error=str(exc),
+            )
