@@ -7,7 +7,9 @@ import json
 from portkey_ai import AsyncPortkey
 from pydantic import TypeAdapter
 
-from core.api.v1.schemas.profiler import ColumnMetadata, GlossaryTerm, KPITerm, TableMetadata
+from core.api.v1.schemas.profiler import ColumnMetadata, GlossaryTerm, KPITerm, SensitivityType, TableMetadata
+from core.services.sensitivity import build_sensitivity_prompt, get_sensitivity_system_prompt
+from core.services.sensitivity.prompt_builder import parse_sensitivity_response
 from core.config import settings
 from core.llm.base import BaseLLMClient
 from core.logging import get_logger
@@ -27,6 +29,7 @@ _GLOSSARY_MAX_TOKENS = 1000
 _FILTER_JUDGE_MAX_TOKENS = 4000  # Judge response for filter columns
 _KPI_CLUSTER_MAX_TOKENS = 800  # Phase A: domain names + table name lists only
 _KPI_GENERATE_MAX_TOKENS = 4000  # Phase B: up to ~15 KPIs with description
+_SENSITIVITY_MAX_TOKENS = 2000  # PII/PHI detection response for a batch of columns
 # Max tables per domain to include in the Phase B prompt.
 _KPI_MAX_TABLES_PER_DOMAIN = 15
 # Max columns per table included in the Phase B domain prompt.
@@ -695,3 +698,52 @@ class PortkeyLLMClient(BaseLLMClient):
                 error=str(exc),
             )
             return []
+
+    async def _detect_column_sensitivity(
+        self,
+        table: TableMetadata,
+        columns: list[ColumnMetadata],
+    ) -> dict[str, tuple[bool, SensitivityType | None]]:
+        """Detect PII/PHI sensitivity for a batch of columns using OpenAI."""
+        prompt = build_sensitivity_prompt(table, columns)
+        system_prompt = get_sensitivity_system_prompt()
+
+        logger.debug(
+            "Requesting PII/PHI sensitivity detection",
+            provider=self.provider_name,
+            model=self._model,
+            table=f"{table.schema_name}.{table.name}",
+            column_count=len(columns),
+        )
+
+        raw = await get_llm_response(
+            self._client,
+            system_prompt=system_prompt,
+            user_prompt=prompt,
+            model=self._model,
+            provider=self.provider_name,
+            temperature=0.0,  # Use deterministic output for classification
+            max_tokens=_SENSITIVITY_MAX_TOKENS,
+            response_format={"type": "json_object"},
+        )
+
+        if not raw:
+            logger.warning(
+                "Empty response from LLM for PII/PHI detection",
+                provider=self.provider_name,
+                table=f"{table.schema_name}.{table.name}",
+            )
+            return {col.name: (False, None) for col in columns}
+
+        results = parse_sensitivity_response(raw, columns)
+
+        sensitive_count = sum(1 for is_sens, _ in results.values() if is_sens)
+        logger.debug(
+            "PII/PHI detection response parsed",
+            provider=self.provider_name,
+            table=f"{table.schema_name}.{table.name}",
+            columns_analyzed=len(columns),
+            sensitive_detected=sensitive_count,
+        )
+
+        return results
