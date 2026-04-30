@@ -58,19 +58,19 @@ def _make_json_safe(value: Any) -> Any:
     """
     if value is None:
         return None
-    if isinstance(value, (str, int, float, bool)):
+    if isinstance(value, str | int | float | bool):
         return value
     if isinstance(value, Decimal):
         return float(value)
-    if isinstance(value, (datetime, date, time)):
+    if isinstance(value, datetime | date | time):
         return value.isoformat()
     if isinstance(value, UUID):
         return str(value)
     if isinstance(value, memoryview):
         return bytes(value).hex()
-    if isinstance(value, (bytes, bytearray)):
+    if isinstance(value, bytes | bytearray):
         return value.hex()
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return [_make_json_safe(v) for v in value]
     if isinstance(value, dict):
         return {k: _make_json_safe(v) for k, v in value.items()}
@@ -287,11 +287,12 @@ class SnowflakeProfiler:
         always ``None``.
         """
         with tracer.start_as_current_span("profiler.fetch_columns"):
-            col_rows, pk_rows = await asyncio.gather(
-                self._db.fetch_all(q.COLUMNS_FOR_TABLE, (schema, table)),
-                self._db.fetch_all(q.PRIMARY_KEY_COLUMNS, (schema, table)),
-            )
-            pk_columns = {r["column_name"] for r in pk_rows}
+            col_rows = await self._db.fetch_all(q.COLUMNS_FOR_TABLE, (schema, table))
+            try:
+                pk_rows = await self._db.fetch_all(q.SHOW_PRIMARY_KEYS_FOR_TABLE.format(schema=schema, table=table))
+            except Exception:
+                pk_rows = []
+            pk_columns = {r.get("column_name") for r in pk_rows if r.get("column_name")}
             return [
                 {
                     "name": r["column_name"],
@@ -348,16 +349,19 @@ class SnowflakeProfiler:
         Snowflake supports FK definitions for metadata purposes even though
         they are not enforced at the engine level.
         """
-        rows = await self._db.fetch_all(q.FOREIGN_KEYS_FOR_TABLE, (schema, table))
+        try:
+            rows = await self._db.fetch_all(q.SHOW_IMPORTED_KEYS_FOR_TABLE.format(schema=schema, table=table))
+        except Exception:
+            return []
         return [
             {
-                "constraint_name": r["constraint_name"],
-                "from_column": r["column_name"],
-                "to_schema": r["foreign_table_schema"],
-                "to_table": r["foreign_table_name"],
-                "to_column": r["foreign_column_name"],
-                "on_update": r["update_rule"],
-                "on_delete": r["delete_rule"],
+                "constraint_name": r.get("fk_name"),
+                "from_column": r.get("fk_column_name"),
+                "to_schema": r.get("pk_schema_name"),
+                "to_table": r.get("pk_table_name"),
+                "to_column": r.get("pk_column_name"),
+                "on_update": r.get("update_rule"),
+                "on_delete": r.get("delete_rule"),
             }
             for r in rows
         ]
